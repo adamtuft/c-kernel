@@ -4,12 +4,27 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ckernel"
+description = "An IPython kernel for teaching and learning C/C++ in a Jupyter notebook, providing C/C++ syntax highlighting and a little more magic."
+readme = "README.md"
 version = "0.1"
-author = "Adam Tuft"
+authors = [
+    {name = "Adam Tuft"}
+]
 dependencies = [
     "ipykernel",
     "jupyter_client"
 ]
+license = {file = "LICENSE"}
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Programming Language :: C",
+    "Programming Language :: C++",
+    "Topic :: Education",
+    "Framework :: IPython",
+    "Framework :: Jupyter",
+    "Operating System :: POSIX :: Linux"
+]
+keywords = ["jupyter", "notebook", "kernel", "c", "c++"]
 
 [project.scripts]
 ckernel_install = "ckernel.ckernel_install:install"
