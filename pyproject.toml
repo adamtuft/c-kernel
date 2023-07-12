@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ckernel"
+version = "0.1"
+author = "Adam Tuft"
+dependencies = [
+    "ipykernel",
+    "jupyter_client"
+]
+
+[project.scripts]
+ckernel_install = "ckernel.ckernel_install:install"
