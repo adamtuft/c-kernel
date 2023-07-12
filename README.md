@@ -17,10 +17,10 @@ git clone git@github.com:adamtuft/c-kernel.git
 python3 -m pip install ./c-kernel
 ```
 
-Then, to install the kernel use the `ckernel_install` command (see `ckernel_install --help` for all options) e.g.:
+Then, install the kernel, giving it a display name of your choice. See `--help` for options:
 
 ```
-ckernel_install AsyncKernel "C/C++ Teaching"
+ckernel_install "C/C++ Teaching"
 ```
 
 The kernel will then be available under the given display name within Jupyter:
