@@ -1,4 +1,4 @@
-if __name__ == '__main__':
+def install() -> None:
     try:
         import importlib.resources as resources
     except ImportError:
