@@ -30,4 +30,7 @@ keywords = ["jupyter", "notebook", "kernel", "c", "c++"]
 ckernel_install = "ckernel.ckernel_install:install"
 
 [tool.setuptools]
-packages = ["ckernel"]
+packages = [
+    "ckernel",
+    "ckernel.kernels"
+]
