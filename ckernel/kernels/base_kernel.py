@@ -1,3 +1,4 @@
+from typing import Literal
 from ipykernel.ipkernel import IPythonKernel
 
 
@@ -19,3 +20,6 @@ class BaseKernel(IPythonKernel):
             "",
             "github.com/adamtuft/c-kernel"
         ])
+
+    def send_text(self, name: Literal["stderr", "stdout"], text: str):
+        self.send_response(self.iopub_socket, 'stream', {'name': name, 'text': text})

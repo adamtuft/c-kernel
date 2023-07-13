@@ -22,6 +22,3 @@ class AsyncKernel(BaseKernel):
     async def stream_data(self, stream: asyncio.StreamReader, name: Literal["stderr", "stdout"]) -> None:
         async for data in stream:
             self.send_text(name, data.decode())
-
-    def send_text(self, name: Literal["stderr", "stdout"], text: str):
-        self.send_response(self.iopub_socket, 'stream', {'name': name, 'text': text})

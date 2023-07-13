@@ -9,11 +9,11 @@ def install() -> None:
     import json
     from jupyter_client.kernelspec import KernelSpecManager
     parser = argparse.ArgumentParser()
+    parser.add_argument("kernel", help="Kernel to install", choices=ckernel.names())
     parser.add_argument("display_name", help="Kernel name to display in Jupyter")
     parser.add_argument("--user", action="store_true", help="Install per-user instead of system-wide.")
     parser.add_argument("--prefix", help="Install under {prefix}/share/jupyter/kernels")
     args = parser.parse_args()
-    args.kernel = "AsyncKernel"
     spec = dict()
     spec["argv"] = ("python3 -m ckernel " + args.kernel + " -f {connection_file}").split()
     spec["display_name"] = args.display_name or args.kernel
