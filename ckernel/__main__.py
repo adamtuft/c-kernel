@@ -3,7 +3,7 @@ if __name__ == '__main__':
     import ckernel
     from ipykernel.kernelapp import IPKernelApp
     parser = argparse.ArgumentParser()
-    parser.add_argument("kernel", choices=ckernel.names())
+    parser.add_argument("kernel", choices=ckernel.kernel_names())
     parser.add_argument("CC", help="The C compiler to use with this kernel")
     parser.add_argument("CXX", help="The C++ compiler to use with this kernel")
     parser.add_argument("-f", help="The connection file to use")
