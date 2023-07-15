@@ -1,10 +1,12 @@
 import asyncio
+import sys
+import traceback
 import json
-from typing import Literal, Dict
+from enum import Enum, auto
+from typing import Literal, List, Optional, NamedTuple
+from argparse import Namespace
 
 from .base_kernel import BaseKernel
-
-_compiler: str = None
 
 """
 Auto-compile C/C++ cells into object files.
@@ -36,6 +38,31 @@ Where to store the .o file?
 ```
 """
 
+class Lang(Enum):
+    C = auto()
+    CPP = auto()
+    
+language = {
+    "c": Lang.C,
+    "cpp": Lang.CPP,
+    "cxx": Lang.CPP,
+    "cc": Lang.CPP,
+}
+
+def error(ename: str, evalue: str, tb: Optional[list[str]] = None) -> dict[str, str | list[str]]:
+    return {
+        "status": "error",
+        "ename": ename,
+        "evalue": evalue,
+        "traceback": tb or []
+    }
+
+def ok(execution_count: int) -> dict[str, str | int]:
+    return {
+        "status": "ok",
+        "execution_count": execution_count
+    }
+
 
 class AutoCompileKernel(BaseKernel):
     """Auto compile C/C++ cells"""
@@ -44,12 +71,24 @@ class AutoCompileKernel(BaseKernel):
     _tag_opt =  "//%"
     _known_opts = [
         "CC",
+        "CXX",
         "CFLAGS",
-        "LDFLAGS",
-        "V"
+        "CXXFLAGS",
+        "LDFLAGS"
     ]
 
-    async def do_execute(self, code: str, silent, store_history=True, user_expressions=None, allow_stdin=False, cell_id=None):
+    async def do_execute(self, *args, **kwargs):
+        """Catch all exceptions and report them in the notebook"""
+        result = None
+        try:
+            result = await self.do_execute_with_try_except(*args, **kwargs)
+        except Exception:
+            message, result = self.error_from_exception(*sys.exc_info())
+            self.send_text("stderr", message)
+        finally:
+            return result
+
+    async def do_execute_with_try_except(self, code: str, silent, store_history=True, user_expressions=None, allow_stdin=False, cell_id=None):
         """
         Algorithm:
             - scan for magics (?)
@@ -60,7 +99,6 @@ class AutoCompileKernel(BaseKernel):
                 - //%CC (to choose a compiler different from the one attached to this kernel)
                 - //%CFLAGS
                 - //%LDFLAGS
-                - //%V (to show the compiler command that will be executed)
 
         Questions:
             - how does the IPython shell intercept & interpret magic commands?
@@ -74,49 +112,87 @@ class AutoCompileKernel(BaseKernel):
         
         # Cell must be named
         if not code.startswith(self._tag_name):
-            self.send_text("stderr", f"Cell must start with \"{self._tag_name} [name]\"\n")
-            return {
-                "status": "error",
-                "ename": "NotNames",
-                "evalue": f"Cell must start with \"{self._tag_name} [name]\"",
-                "traceback": []
-            }
+            message = f"code cell must start with \"{self._tag_name} [filename]\""
+            self.send_text("stderr", message + "\n")
+            return error("NotNamed", message)
+        else:
+            name = code[len(self._tag_name):code.find("\n")].strip()
+            with open(name, "w") as src:
+                src.write(code)
         
         args = self.parse_args(code)
-        self.send_text("stderr", json.dumps(args, indent=2) + "\n")
-        self.send_text("stderr", f"command: {self.prepare_command(args)}\n")
-        self.send_text("stdout", f"compiled {args['obj']}\n")
-        return {"status": "ok", "execution_count": self.execution_count}
+        compile = self.get_compiler_command(args)
+        # self.send_text("stderr", json.dumps(args.__dict__, indent=2) + "\n")
+        self.send_text("stdout", f"$> {compile}\n")
+        await self.exec_command(compile)
+        await self.exec_command(self.get_command_detect_main(args))
+        return ok(self.execution_count)
 
-    def parse_args(self, code: str):
-        args = {}
+    def parse_args(self, code: str) -> Namespace:
+        args = self.default_compiler_args()
         header, *lines = code.splitlines()
         assert header.startswith(self._tag_name)
-        args["name"] = header.removeprefix(self._tag_name).strip()
-        args["obj"] = args["name"].split(".")[0] + ".o"
+        args.name = header.removeprefix(self._tag_name).strip()
+
+        # Detect language used
+        name, ext = args.name.split(".")
+        args.language = language[ext]
+        args.obj = name + ".o"
+
+        # Detect options
         for k, line in enumerate(lines, start=2):
             if line.startswith(self._tag_opt) and len(line.rstrip()) > len(self._tag_opt):
-                opt, *val = line.removeprefix(self._tag_opt).split()
+                opt, _, rest = line.removeprefix(self._tag_opt).strip().partition(" ")
                 if opt not in self._known_opts:
                     self.send_text("stderr", f"unknown option on line {k}: {opt}\n")
                 else:
-                    args[opt] = val
+                    setattr(args, opt, rest)
+
+        # Set the compiler
+        if args.language == Lang.C:
+            args.compiler = args.CC or self.ckargs.CC
+        elif args.language == Lang.CPP:
+            args.compiler = args.CXX or self.ckargs.CXX
+        else:
+            raise ValueError(f"don't know which compiler for extension {ext}")
+        
+        # Set the compilation flags:
+        if args.language == Lang.C:
+            args.cflags = args.CFLAGS
+        else:
+            args.cflags = args.CXXFLAGS
+
         return args
     
-    def prepare_command(self, args) -> str:
-        return f"""{args.get("CC", "cc")} {args.get("CFLAGS", "")} {args.get("LDFLAGS", "")} -c {args["name"]} -o {args["obj"]}"""
-
-    # Some functions that would be useful as line magic (somehow):
-
-    @staticmethod
-    def compiler(*args, **kwargs):
-        global _compiler
-        return "whatever the compiler is, or set it and report that it was changed"
-
-    @staticmethod
-    def help(*args, **kwargs):
-        return "some useful help string"
+    def get_compiler_command(self, args) -> str:
+        return f"""{args.compiler} {args.cflags} {args.LDFLAGS} -c {args.name} -o {args.obj}"""
+    
+    def get_command_detect_main(self, args) -> str:
+        return f"""nm {args.obj}"""
     
     @classmethod
-    def options(cls, *args, **kwargs):
-        return cls._known_opts
+    def default_compiler_args(cls, extra: Optional[List[str]] = None) -> Namespace:
+        "Return a namespace with known (and any extra) options set to \"\""
+        extra = extra or []
+        args = Namespace(**{opt: "" for opt in (cls._known_opts + extra)})
+        return args
+    
+    @staticmethod
+    def error_from_exception(exc_type, exc, tb):
+        tb_str = "\n".join(traceback.format_tb(tb))
+        message = f"{tb_str}\n{exc_type.__name__}: {exc}"
+        return message, error(exc_type.__name__, str(exc), traceback.format_tb(tb))
+
+    async def exec_command(self, command: str, silent: bool = False):
+        proc = await asyncio.create_subprocess_shell(command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        if silent:
+            streams = ()
+        else:
+            streams = self.stream_data(proc.stdout, "stdout"), self.stream_data(proc.stderr, "stderr")
+        await asyncio.gather(*streams, proc.wait())
+        if proc.returncode != 0:
+            self.send_text("stderr", f"command failed with exit code {proc.returncode}: {command}")
+
+    async def stream_data(self, stream: asyncio.StreamReader, name: Literal["stderr", "stdout"]) -> None:
+        async for data in stream:
+            self.send_text(name, data.decode())
