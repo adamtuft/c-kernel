@@ -1,8 +1,10 @@
 from typing import Literal
+from argparse import Namespace
 from ipykernel.ipkernel import IPythonKernel
 
 
 class BaseKernel(IPythonKernel):
+    ckargs: Namespace = Namespace()
     language = 'c'
     language_version = 'C11'
     language_info = {

@@ -1,31 +1,39 @@
+from contextlib import contextmanager
+
+@contextmanager
+def tempdir():
+    import pathlib, tempfile, shutil
+    d = pathlib.Path(tempfile.mkdtemp())
+    yield d
+    shutil.rmtree(d)
+
 def install() -> None:
-    try:
-        import importlib.resources as resources
-    except ImportError:
-        import importlib_resources as resources
-    import os
-    import argparse
-    import ckernel
-    import json
+    from argparse import ArgumentParser
+    from json import dump
     from jupyter_client.kernelspec import KernelSpecManager
-    parser = argparse.ArgumentParser()
-    parser.add_argument("kernel", help="Kernel to install", choices=ckernel.names())
+    from ckernel import kernel_names
+    parser = ArgumentParser()
+    parser.add_argument("kernel", help="Kernel to install", choices=kernel_names())
+    parser.add_argument("name", help="The name for this kernel (must be unique among installed kernels)")
     parser.add_argument("display_name", help="Kernel name to display in Jupyter")
+    parser.add_argument("--cc", help="The C compiler which this kernel should use", default="cc")
+    parser.add_argument("--cxx", help="The C++ compiler which this kernel should use", default="cpp")
     parser.add_argument("--user", action="store_true", help="Install per-user instead of system-wide.")
     parser.add_argument("--prefix", help="Install under {prefix}/share/jupyter/kernels")
     args = parser.parse_args()
-    spec = dict()
-    spec["argv"] = ("python3 -m ckernel " + args.kernel + " -f {connection_file}").split()
-    spec["display_name"] = args.display_name or args.kernel
-    specdir = resources.files(ckernel) / f"_spec_{args.kernel.lower()}"
-    if not specdir.is_dir():
-        os.mkdir(specdir)
-    with open(specdir / "kernel.json", "w") as specfile:
-        json.dump(spec, specfile, indent=4)
-    try:
-        destination = KernelSpecManager().install_kernel_spec(str(specdir), kernel_name=args.kernel, user=args.user, prefix=args.prefix)
-    except PermissionError as err:
-        print(f"{type(err).__name__}: {err}")
-        print("Kernel installation failed - trying again with --user")
-        destination = KernelSpecManager().install_kernel_spec(str(specdir), kernel_name=args.kernel, user=True, prefix=args.prefix)
-    print(f"installed {args.kernel} (display_name=\"{args.display_name}\") at {destination}")
+    ksm = KernelSpecManager()
+    with tempdir() as specdir:
+        spec = dict()
+        spec["argv"] = (f"python3 -m ckernel {args.kernel} {args.cc} {args.cxx}" + " -f {connection_file}").split()
+        spec["display_name"] = args.display_name or args.kernel
+        with open(specdir / "kernel.json", "w") as specfile:
+            dump(spec, specfile, indent=4)
+        spec_args = {"kernel_name": args.name, "user": args.user, "prefix": args.prefix}
+        try:
+            dest = ksm.install_kernel_spec(str(specdir), **spec_args)
+        except PermissionError as err:
+            print(f"{type(err).__name__}: {err}")
+            print("Kernel installation failed, trying again with --user")
+            spec_args["user"] = True
+            dest = ksm.install_kernel_spec(str(specdir), **spec_args)
+        print(f"installed {args.kernel} as {args.name} (display name \"{args.display_name}\") at {dest}")
