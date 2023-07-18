@@ -2,6 +2,10 @@ from typing import Literal
 from argparse import Namespace
 from ipykernel.ipkernel import IPythonKernel
 
+Stream = Literal["stderr", "stdout"]
+STDERR: Stream = "stderr"
+STDOUT: Stream = "stdout"
+
 
 class BaseKernel(IPythonKernel):
     ckargs: Namespace = Namespace()
@@ -23,5 +27,8 @@ class BaseKernel(IPythonKernel):
             "github.com/adamtuft/c-kernel"
         ])
 
-    def send_text(self, name: Literal["stderr", "stdout"], text: str):
-        self.send_response(self.iopub_socket, 'stream', {'name': name, 'text': text})
+    # def send_text(self, name: Stream, text: str):
+    #     self.send_response(self.iopub_socket, 'stream', {'name': name, 'text': text})
+
+    def print(self, text: str, dest: Stream = STDOUT, end: str = "\n"):
+        self.send_response(self.iopub_socket, 'stream', {'name': dest, 'text': text + end})
