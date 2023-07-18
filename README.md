@@ -50,7 +50,7 @@ default compilers, run:
 ckernel_install AutoCompileKernel autocompile-clang "Auto-compile C/C++ (clang)" --user --cc clang --cxx clang++
 ```
 
-This kernel will then be available with under the name "Auto-compile C/C++ (clang)"
+This kernel will then be available under the name "Auto-compile C/C++ (clang)"
 in Jupyter:
 
 <p align="center">
