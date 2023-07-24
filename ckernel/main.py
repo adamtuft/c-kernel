@@ -46,7 +46,7 @@ def install(
         if location is None:
             print(
                 colorama.Fore.RED
-                + f"WARNING: {prog} not found"
+                + f"WARNING: {prog} not found in your PATH. Please ensure it's available before using this kernel."
                 + colorama.Style.RESET_ALL,
                 file=sys.stderr,
             )
