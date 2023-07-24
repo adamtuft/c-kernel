@@ -43,7 +43,9 @@ def install(
 
     # The kernel spec to serialise in "kernel.json"
     spec = dict()
-    spec["argv"] = (f"ckernel run {kernel}" + " -f {connection_file}").split()
+    spec["argv"] = (
+        f"python3 -m ckernel run {kernel}" + " -f {connection_file}"
+    ).split()
     spec["display_name"] = display_name or kernel
     spec["env"] = {"CKERNEL_CC": cc, "CKERNEL_CXX": cxx}
 
