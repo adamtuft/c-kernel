@@ -1,5 +1,6 @@
 """Install and launch kernels"""
 
+import sys
 import pathlib
 import tempfile
 import shutil
@@ -8,6 +9,7 @@ import argparse
 import json
 from enum import Enum
 
+import colorama
 import jupyter_client
 from ipykernel.kernelapp import IPKernelApp
 
@@ -38,6 +40,18 @@ def install(
     cxx: str,
 ) -> None:
     """Install a specific kernel"""
+
+    for prog in [cc, cxx]:
+        location = shutil.which(prog)
+        if location is None:
+            print(
+                colorama.Fore.RED
+                + f"WARNING: {prog} not found"
+                + colorama.Style.RESET_ALL,
+                file=sys.stderr,
+            )
+        else:
+            print(f"found {prog}: {location}")
 
     ksm = jupyter_client.kernelspec.KernelSpecManager()
 
