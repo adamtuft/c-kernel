@@ -47,7 +47,7 @@ For example, to install `AutoCompileKernel` using `clang` and `clang++` as the
 default compilers, run:
 
 ```
-ckernel_install AutoCompileKernel autocompile-clang "Auto-compile C/C++ (clang)" --user --cc clang --cxx clang++
+ckernel install AutoCompileKernel autocompile-clang "Auto-compile C/C++ (clang)" --user --cc clang --cxx clang++
 ```
 
 This kernel will then be available under the name "Auto-compile C/C++ (clang)"
@@ -57,7 +57,7 @@ in Jupyter:
 <img src="img/demo-2.png">
 </p>
 
-See `ckernel_install --help` for all options.
+See `ckernel install --help` for all options.
 
 ## License
 
