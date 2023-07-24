@@ -13,9 +13,9 @@ from . import base_kernel
 StreamConsumer = Callable[[asyncio.StreamReader], Coroutine[None, None, None]]
 
 
-class Lang(Enum):
-    C = auto()
-    CPP = auto()
+class Lang(str, Enum):
+    C = "C"
+    CPP = "C++"
 
 
 language = {
@@ -68,7 +68,7 @@ class AutoCompileKernel(base_kernel.BaseKernel):
 
     _tag_name = "////"
     _tag_opt = "//%"
-    _known_opts = ["CC", "CXX", "CFLAGS", "CXXFLAGS", "LDFLAGS", "DEPENDS"]
+    _known_opts = ["CC", "CXX", "CFLAGS", "CXXFLAGS", "LDFLAGS", "DEPENDS", "VERBOSE"]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -111,21 +111,20 @@ class AutoCompileKernel(base_kernel.BaseKernel):
 
         # Cell must be named
         if not code.startswith(self._tag_name):
-            message = f'code cell must start with "{self._tag_name} [filename]"'
+            message = f'[ERROR] code cell must start with "{self._tag_name} [filename]"'
             self.print(message, dest=base_kernel.STDERR)
             return error("NotNamed", message)
-        else:
-            name = code[len(self._tag_name) : code.find("\n")].strip()
-            with open(name, "w", encoding="utf-8") as src:
-                src.write(code)
-                self.print(f"wrote file {name}")
 
         # Get args specified in the code cell
         args = self.parse_args(code)
 
-        if False:
-            # TODO: add option for user to enable this
-            self.print(json.dumps(args.__dict__, indent=2), base_kernel.STDERR)
+        if args.verbose:
+            nonempty_args = {k: v for k, v in args.__dict__.items() if v != ""}
+            self.print(json.dumps(nonempty_args, indent=2), base_kernel.STDERR)
+
+        with open(args.filename, "w", encoding="utf-8") as src:
+            src.write(code)
+            self.print(f"wrote file {args.filename}")
 
         if args.compiler is None:
             # No compiler means nothing to compile, so exit
@@ -133,7 +132,7 @@ class AutoCompileKernel(base_kernel.BaseKernel):
 
         # Attempt to compile to .o
         compile_cmd = self.command_compile(
-            args.compiler, args.cflags, args.LDFLAGS, args.name, args.obj
+            args.compiler, args.cflags, args.LDFLAGS, args.filename, args.obj
         )
         self.print(f"$> {compile_cmd.string}")
         result = await compile_cmd.run(self.stream_stdout, self.stream_stderr)
@@ -173,10 +172,10 @@ class AutoCompileKernel(base_kernel.BaseKernel):
         args = self.default_compiler_args()
         header, *lines = code.splitlines()
         assert header.startswith(self._tag_name)
-        args.name = header.removeprefix(self._tag_name).strip()
+        args.filename = header.removeprefix(self._tag_name).strip()
 
         # Detect language used
-        basename, ext = args.name.split(".")
+        basename, ext = args.filename.split(".")
         args.language = language.get(ext)
         args.obj = basename + ".o"
         args.exe = basename
@@ -189,6 +188,8 @@ class AutoCompileKernel(base_kernel.BaseKernel):
                 opt, _, rest = line.removeprefix(self._tag_opt).strip().partition(" ")
                 if opt not in self._known_opts:
                     self.print(f"unknown option on line {k}: {opt}", base_kernel.STDERR)
+                elif opt == "VERBOSE":
+                    args.verbose = True
                 else:
                     setattr(args, opt, rest)
 
@@ -236,9 +237,10 @@ class AutoCompileKernel(base_kernel.BaseKernel):
 
     @classmethod
     def default_compiler_args(cls, extra: Optional[List[str]] = None) -> Namespace:
-        'Return a namespace with known (and any extra) options set to ""'
+        "Return a namespace with known (and any extra) options set to an empty string"
         extra = extra or []
         args = Namespace(**{opt: "" for opt in (cls._known_opts + extra)})
+        args.verbose = False
         return args
 
     @staticmethod
