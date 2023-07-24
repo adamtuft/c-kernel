@@ -8,14 +8,9 @@ name = "ckernel"
 description = "An IPython kernel for teaching and learning C/C++ in a Jupyter notebook, providing C/C++ syntax highlighting and a little more magic."
 readme = "README.md"
 version = "0.1"
-authors = [
-    {name = "Adam Tuft"}
-]
-dependencies = [
-    "ipykernel",
-    "jupyter_client"
-]
-license = {file = "LICENSE"}
+authors = [{ name = "Adam Tuft" }]
+dependencies = ["ipykernel", "jupyter_client"]
+license = { file = "LICENSE" }
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Programming Language :: C",
@@ -23,15 +18,12 @@ classifiers = [
     "Topic :: Education",
     "Framework :: IPython",
     "Framework :: Jupyter",
-    "Operating System :: POSIX :: Linux"
+    "Operating System :: POSIX :: Linux",
 ]
 keywords = ["jupyter", "notebook", "kernel", "c", "c++"]
 
 [project.scripts]
-ckernel_install = "ckernel.ckernel_install:install"
+ckernel = "ckernel.main:main"
 
 [tool.setuptools]
-packages = [
-    "ckernel",
-    "ckernel.kernels"
-]
+packages = ["ckernel"]
