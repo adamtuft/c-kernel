@@ -73,7 +73,7 @@ def run(kernel: str) -> None:
     IPKernelApp.launch_instance(kernel_class=kernel_class)
 
 
-def main(prog: str | None = None) -> None:
+def main(prog: str = None) -> None:
     """Install or run a kernel"""
 
     formatter_class = argparse.ArgumentDefaultsHelpFormatter
