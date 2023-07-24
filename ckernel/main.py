@@ -6,7 +6,7 @@ import shutil
 import contextlib
 import argparse
 import json
-from enum import StrEnum, auto
+from enum import Enum
 
 import jupyter_client
 from ipykernel.kernelapp import IPKernelApp
@@ -14,9 +14,9 @@ from ipykernel.kernelapp import IPKernelApp
 import ckernel
 
 
-class Command(StrEnum):
-    INSTALL = auto()
-    RUN = auto()
+class Command(Enum):
+    INSTALL = "install"
+    RUN = "run"
 
 
 @contextlib.contextmanager
@@ -86,7 +86,7 @@ def main() -> None:
 
     # Parse the install subcommand
     parse_install = command_action.add_parser(
-        str(Command.INSTALL),
+        Command.INSTALL.value,
         help=install_help,
         description=install_help,
         formatter_class=formatter_class,
@@ -124,7 +124,7 @@ def main() -> None:
 
     # Parse the run subcommand
     parse_run = command_action.add_parser(
-        str(Command.RUN),
+        Command.RUN.value,
         help=run_help,
         description=run_help,
         formatter_class=formatter_class,
