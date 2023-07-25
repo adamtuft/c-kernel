@@ -10,14 +10,14 @@ kernels = {
 }
 
 
-def kernel_names() -> list[str]:
+def class_list() -> list[str]:
     """Get the list of available kernel classes"""
     return list(kernels.keys())
 
 
-def get_kernel(kernel: str) -> base_kernel.BaseKernel:
+def get_cls(kernel: str) -> base_kernel.BaseKernel:
     """Look up a kernel class by its name"""
     return kernels[kernel]
 
 
-__all__ = ["get_kernel", "kernel_names"]
+__all__ = ["get_cls", "class_list"]

@@ -1,6 +1,7 @@
 """Install and launch kernels"""
 
 import sys
+import typing
 import pathlib
 import tempfile
 import shutil
@@ -17,6 +18,8 @@ import ckernel
 
 
 class Command(Enum):
+    """Constants for the known commands"""
+
     INSTALL = "install"
     RUN = "run"
 
@@ -36,17 +39,18 @@ def install(
     display_name: str,
     user: bool,
     prefix: str,
-    cc: str,
-    cxx: str,
+    c_compiler: str,
+    cpp_compiler: str,
 ) -> None:
     """Install a specific kernel"""
 
-    for prog in [cc, cxx]:
+    for prog in [c_compiler, cpp_compiler]:
         location = shutil.which(prog)
         if location is None:
             print(
                 colorama.Fore.RED
-                + f"WARNING: {prog} not found in your PATH. Please ensure it's available before using this kernel."
+                + f"WARNING: {prog} not found in your PATH. "
+                + "Please ensure it's available before using this kernel."
                 + colorama.Style.RESET_ALL,
                 file=sys.stderr,
             )
@@ -61,9 +65,9 @@ def install(
         f"python3 -m ckernel run {kernel}" + " -f {connection_file}"
     ).split()
     spec["display_name"] = display_name or kernel
-    spec["env"] = {"CKERNEL_CC": cc, "CKERNEL_CXX": cxx}
+    spec["env"] = {"CKERNEL_CC": c_compiler, "CKERNEL_CXX": cpp_compiler}
 
-    with open(specdir / "kernel.json", "w", encoding="utf-8") as specfile:
+    with open(specdir / pathlib.Path("kernel.json"), "w", encoding="utf-8") as specfile:
         json.dump(spec, specfile, indent=4)
 
     install_args = {
@@ -82,17 +86,11 @@ def install(
     print(f'installed {kernel} as {name} (display name "{display_name}") at {dest}')
 
 
-def run(kernel: str) -> None:
-    kernel_class = ckernel.get_kernel(kernel)
-    IPKernelApp.launch_instance(kernel_class=kernel_class)
-
-
-def main(prog: str = None) -> None:
+def main(prog: typing.Optional[str] = None) -> None:
     """Install or run a kernel"""
 
     formatter_class = argparse.ArgumentDefaultsHelpFormatter
 
-    kernels = ckernel.kernel_names()
     install_help = "install a kernel"
     run_help = "run an installed kernel"
 
@@ -111,8 +109,8 @@ def main(prog: str = None) -> None:
     # Arguments to the install subcommand
     parse_install.add_argument(
         "kernel",
-        help=f"kernel to install ({', '.join(kernels)})",
-        choices=kernels,
+        help=f"kernel to install ({', '.join(ckernel.class_list())})",
+        choices=ckernel.class_list(),
         metavar="kernel",
     )
     parse_install.add_argument(
@@ -158,7 +156,7 @@ def main(prog: str = None) -> None:
 
     args = parser.parse_args()
 
-    if args.command == "install":
+    if args.command == Command.INSTALL:
         with tempdir() as specdir:
             install(
                 specdir,
@@ -170,7 +168,7 @@ def main(prog: str = None) -> None:
                 args.cc,
                 args.cxx,
             )
-    elif args.command == "run":
-        run(args.kernel)
+    elif args.command == Command.RUN:
+        IPKernelApp.launch_instance(kernel_class=ckernel.get_cls(args.kernel))
     else:
         parser.print_help()
