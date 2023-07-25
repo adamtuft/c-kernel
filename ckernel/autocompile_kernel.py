@@ -1,69 +1,17 @@
+"""Implements AutoCompileKernel"""
+
 from __future__ import annotations
-import asyncio
 import sys
 import os
-import traceback
 import json
-from enum import Enum, auto
-from typing import List, Optional, Callable, Coroutine
+from typing import List, Optional
 from argparse import Namespace
 
-from . import base_kernel
-
-StreamConsumer = Callable[[asyncio.StreamReader], Coroutine[None, None, None]]
-
-
-class Lang(str, Enum):
-    C = "C"
-    CPP = "C++"
+from .base_kernel import BaseKernel, STDERR
+from .util import AsyncCommand, Lang, language, success, error, error_from_exception
 
 
-language = {
-    "c": Lang.C,
-    "cpp": Lang.CPP,
-    "cxx": Lang.CPP,
-    "cc": Lang.CPP,
-}
-
-
-class AsyncCommand:
-    def __init__(self, command: str) -> None:
-        self._command: str = command
-
-    @property
-    def string(self) -> str:
-        return self._command
-
-    async def run(
-        self: AsyncCommand,
-        stdout: Optional[StreamConsumer] = None,
-        stderr: Optional[StreamConsumer] = None,
-    ) -> int:
-        proc = await asyncio.create_subprocess_shell(
-            self._command,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        streams = []
-        if stdout is not None:
-            streams.append(stdout(proc.stdout))
-        if stderr is not None:
-            streams.append(stderr(proc.stderr))
-        await asyncio.gather(*streams, proc.wait())
-        return proc.returncode
-
-
-def error(
-    ename: str, evalue: str, tb: Optional[list[str]] = None
-) -> dict[str, str | list[str]]:
-    return {"status": "error", "ename": ename, "evalue": evalue, "traceback": tb or []}
-
-
-def ok(execution_count: int) -> dict[str, str | int]:
-    return {"status": "ok", "execution_count": execution_count}
-
-
-class AutoCompileKernel(base_kernel.BaseKernel):
+class AutoCompileKernel(BaseKernel):
     """Auto compile C/C++ cells"""
 
     _tag_name = "////"
@@ -80,9 +28,9 @@ class AutoCompileKernel(base_kernel.BaseKernel):
         result = None
         try:
             result = await self.autocompile(*args, **kwargs)
-        except Exception:
-            message, result = self.error_from_exception(*sys.exc_info())
-            self.print(message, dest=base_kernel.STDERR)
+        except Exception:  # pylint: disable=broad-exception-caught
+            message, result = error_from_exception(*sys.exc_info())
+            self.print(message, dest=STDERR)
         return result
 
     async def autocompile(
@@ -94,6 +42,8 @@ class AutoCompileKernel(base_kernel.BaseKernel):
         allow_stdin=False,
         cell_id=None,
     ):
+        """Auto-compile (and possibly execute) a code cell"""
+
         # Scan for magics
         if (
             len(code.splitlines()) == 1
@@ -112,7 +62,7 @@ class AutoCompileKernel(base_kernel.BaseKernel):
         # Cell must be named
         if not code.startswith(self._tag_name):
             message = f'[ERROR] code cell must start with "{self._tag_name} [filename]"'
-            self.print(message, dest=base_kernel.STDERR)
+            self.print(message, dest=STDERR)
             return error("NotNamed", message)
 
         # Get args specified in the code cell
@@ -120,7 +70,7 @@ class AutoCompileKernel(base_kernel.BaseKernel):
 
         if args.verbose:
             nonempty_args = {k: v for k, v in args.__dict__.items() if v != ""}
-            self.print(json.dumps(nonempty_args, indent=2), base_kernel.STDERR)
+            self.print(json.dumps(nonempty_args, indent=2), STDERR)
 
         with open(args.filename, "w", encoding="utf-8") as src:
             src.write(code)
@@ -128,7 +78,7 @@ class AutoCompileKernel(base_kernel.BaseKernel):
 
         if args.compiler is None:
             # No compiler means nothing to compile, so exit
-            return ok(self.execution_count)
+            return success(self.execution_count)
 
         # Attempt to compile to .o
         compile_cmd = self.command_compile(
@@ -137,14 +87,12 @@ class AutoCompileKernel(base_kernel.BaseKernel):
         self.print(f"$> {compile_cmd.string}")
         result = await compile_cmd.run(self.stream_stdout, self.stream_stderr)
         if result != 0:
-            self.print(
-                f"compilation failed with exit code {result}", dest=base_kernel.STDERR
-            )
+            self.print(f"compilation failed with exit code {result}", dest=STDERR)
 
         # Detect whether the cell defines a main function
         if await self.command_detect_main(args.obj).run() != 0:
             # No main defined, so we're finished
-            return ok(self.execution_count)
+            return success(self.execution_count)
 
         # Since main was defined, attempt to link an executable
         link_exe = self.command_link_exe(
@@ -153,20 +101,16 @@ class AutoCompileKernel(base_kernel.BaseKernel):
         self.print(f"$> {link_exe.string}")
         result = await link_exe.run(self.stream_stdout, self.stream_stderr)
         if result != 0:
-            self.print(
-                f"linking failed with exit code {result}", dest=base_kernel.STDERR
-            )
+            self.print(f"linking failed with exit code {result}", dest=STDERR)
 
         # Attempt to run the executable
         run_exe = self.command_exec(f"./{args.exe}")
         self.print(f"$> {run_exe.string}")
         result = await run_exe.run(self.stream_stdout, self.stream_stderr)
         if result != 0:
-            self.print(
-                f"executable failed with exit code {result}", dest=base_kernel.STDERR
-            )
+            self.print(f"executable failed with exit code {result}", dest=STDERR)
 
-        return ok(self.execution_count)
+        return success(self.execution_count)
 
     def parse_args(self, code: str) -> Namespace:
         args = self.default_compiler_args()
@@ -187,7 +131,7 @@ class AutoCompileKernel(base_kernel.BaseKernel):
             ):
                 opt, _, rest = line.removeprefix(self._tag_opt).strip().partition(" ")
                 if opt not in self._known_opts:
-                    self.print(f"unknown option on line {k}: {opt}", base_kernel.STDERR)
+                    self.print(f"unknown option on line {k}: {opt}", STDERR)
                 elif opt == "VERBOSE":
                     args.verbose = True
                 else:
@@ -242,9 +186,3 @@ class AutoCompileKernel(base_kernel.BaseKernel):
         args = Namespace(**{opt: "" for opt in (cls._known_opts + extra)})
         args.verbose = False
         return args
-
-    @staticmethod
-    def error_from_exception(exc_type, exc, tb):
-        tb_str = "\n".join(traceback.format_tb(tb))
-        message = f"{tb_str}\n{exc_type.__name__}: {exc}"
-        return message, error(exc_type.__name__, str(exc), traceback.format_tb(tb))

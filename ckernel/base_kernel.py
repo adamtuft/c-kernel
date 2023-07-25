@@ -1,10 +1,10 @@
-from typing import Literal, Coroutine
+"""Implements BaseKernel"""
+
+from typing import Coroutine
 from asyncio import StreamReader
 from ipykernel.ipkernel import IPythonKernel
 
-Stream = Literal["stderr", "stdout"]
-STDERR: Stream = "stderr"
-STDOUT: Stream = "stdout"
+from .util import Stream, STDOUT, STDERR
 
 
 class BaseKernel(IPythonKernel):

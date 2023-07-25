@@ -1,7 +1,6 @@
 """A simple asynchronous kernel"""
 
 import asyncio
-from typing import Literal
 
 from . import base_kernel
 
