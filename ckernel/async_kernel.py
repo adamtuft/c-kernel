@@ -1,18 +1,20 @@
 """A simple asynchronous kernel"""
 
-import asyncio
+from .util import AsyncCommand, STDERR
+from .base_kernel import BaseKernel
 
-from . import base_kernel
 
+class AsyncKernel(BaseKernel):  # pylint: disable=too-many-ancestors
+    """Execute a code cell, interpreting our own magic comments as shell commands"""
 
-class AsyncKernel(base_kernel.BaseKernel):
-    async def do_execute(
+    async def do_execute(  # pylint: disable=too-many-arguments
         self,
-        code: str,
+        code,
         silent,
         store_history=True,
         user_expressions=None,
         allow_stdin=False,
+        *,
         cell_id=None,
     ):
         response = await super().do_execute(
@@ -23,25 +25,18 @@ class AsyncKernel(base_kernel.BaseKernel):
             allow_stdin=allow_stdin,
             cell_id=cell_id,
         )
-        if response["status"] == "ok":
-            commands = [
-                line[3:].strip() for line in code.splitlines() if line.startswith("//%")
-            ]
-            for command in commands:
-                proc = await asyncio.create_subprocess_shell(
-                    command,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
+        if response["status"] != "ok":
+            return response
+        commands = [
+            line[3:].strip() for line in code.splitlines() if line.startswith("//%")
+        ]
+        for command in commands:
+            task = AsyncCommand(command)
+            result = await task.run(self.stream_stdout, self.stream_stderr)
+            if result != 0:
+                self.print(
+                    f"command failed with exit code {result}:\n  $> {command}",
+                    STDERR,
                 )
-                streams = (
-                    self.stream_stdout(proc.stdout),
-                    self.stream_stderr(proc.stderr),
-                )
-                await asyncio.gather(*streams, proc.wait())
-                if proc.returncode != 0:
-                    self.print(
-                        f"command failed with exit code {proc.returncode}:\n  $> {command}",
-                        base_kernel.STDERR,
-                    )
-                    break
+                break
         return response
