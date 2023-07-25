@@ -96,7 +96,7 @@ def main(prog: typing.Optional[str] = None) -> None:
 
     parser = argparse.ArgumentParser(prog=prog)
 
-    command_action = parser.add_subparsers(dest="command")
+    command_action = parser.add_subparsers(dest="command", metavar="action")
 
     # Parse the install subcommand
     parse_install = command_action.add_parser(
@@ -155,6 +155,7 @@ def main(prog: typing.Optional[str] = None) -> None:
     )
 
     args = parser.parse_args()
+    args.command = Command(args.command)
 
     if args.command == Command.INSTALL:
         with tempdir() as specdir:
@@ -171,4 +172,9 @@ def main(prog: typing.Optional[str] = None) -> None:
     elif args.command == Command.RUN:
         IPKernelApp.launch_instance(kernel_class=ckernel.get_cls(args.kernel))
     else:
+        print(
+            colorama.Fore.RED
+            + f"ERROR: unknown acation: {args.command.value}"
+            + colorama.Style.RESET_ALL
+        )
         parser.print_help()
