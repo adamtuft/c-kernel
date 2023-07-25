@@ -122,12 +122,12 @@ def main(prog: typing.Optional[str] = None) -> None:
     parse_install.add_argument(
         "--cc",
         help="the C compiler which this kernel should use",
-        default="/usr/bin/cc",
+        default="/usr/bin/gcc",
     )
     parse_install.add_argument(
         "--cxx",
         help="the C++ compiler which this kernel should use",
-        default="/usr/bin/cpp",
+        default="/usr/bin/g++",
     )
     parse_install.add_argument(
         "--user", action="store_true", help="install per-user only"
