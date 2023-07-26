@@ -1,14 +1,15 @@
 """Implements AutoCompileKernel"""
 
 from __future__ import annotations
-import sys
-import os
-import json
-from typing import List, Optional
-from argparse import Namespace
 
-from .base_kernel import BaseKernel, STDERR
-from .util import AsyncCommand, Lang, language, success, error, error_from_exception
+import json
+import os
+import sys
+from argparse import Namespace
+from typing import List, Optional
+
+from .base_kernel import STDERR, BaseKernel
+from .util import AsyncCommand, Lang, error, error_from_exception, language, success
 
 
 class AutoCompileKernel(BaseKernel):
@@ -16,7 +17,16 @@ class AutoCompileKernel(BaseKernel):
 
     _tag_name = "////"
     _tag_opt = "//%"
-    _known_opts = ["CC", "CXX", "CFLAGS", "CXXFLAGS", "LDFLAGS", "DEPENDS", "VERBOSE"]
+    _known_opts = [
+        "CC",
+        "CXX",
+        "CFLAGS",
+        "CXXFLAGS",
+        "LDFLAGS",
+        "DEPENDS",
+        "VERBOSE",
+        "ARGS",
+    ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -104,7 +114,7 @@ class AutoCompileKernel(BaseKernel):
             self.print(f"linking failed with exit code {result}", dest=STDERR)
 
         # Attempt to run the executable
-        run_exe = self.command_exec(f"./{args.exe}")
+        run_exe = AsyncCommand(f"./{args.exe} {args.ARGS}")
         self.print(f"$> {run_exe.string}")
         result = await run_exe.run(self.stream_stdout, self.stream_stderr)
         if result != 0:
@@ -175,9 +185,6 @@ class AutoCompileKernel(BaseKernel):
         self, compiler: str, ldflags: str, exe: str, objname: str, depends: str
     ) -> AsyncCommand:
         return AsyncCommand(f"{compiler} {ldflags} {depends} {objname} -o {exe}")
-
-    def command_exec(self, exe: str) -> AsyncCommand:
-        return AsyncCommand(exe)
 
     @classmethod
     def default_compiler_args(cls, extra: Optional[List[str]] = None) -> Namespace:
