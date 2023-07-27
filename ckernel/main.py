@@ -96,6 +96,8 @@ def main(prog: typing.Optional[str] = None) -> None:
 
     parser = argparse.ArgumentParser(prog=prog)
 
+    parser.add_argument("-v", "--version", help="print version", action="store_true")
+
     command_action = parser.add_subparsers(dest="command", metavar="action")
 
     # Parse the install subcommand
@@ -155,8 +157,12 @@ def main(prog: typing.Optional[str] = None) -> None:
     )
 
     args = parser.parse_args()
-    args.command = Command(args.command)
 
+    if args.version:
+        print(ckernel.__version__)
+        raise SystemExit(0)
+
+    args.command = Command(args.command)
     if args.command == Command.INSTALL:
         with tempdir() as specdir:
             install(
