@@ -8,8 +8,16 @@ import sys
 from argparse import Namespace
 from typing import List, Optional
 
-from .base_kernel import STDERR, BaseKernel
-from .util import AsyncCommand, Lang, error, error_from_exception, language, success
+from .base_kernel import BaseKernel
+from .util import (
+    AsyncCommand,
+    Lang,
+    STDERR,
+    error,
+    error_from_exception,
+    language,
+    success,
+)
 
 
 class AutoCompileKernel(BaseKernel):
@@ -26,6 +34,8 @@ class AutoCompileKernel(BaseKernel):
         "DEPENDS",
         "VERBOSE",
         "ARGS",
+        "NOCOMPILE",
+        "NOEXEC",
     ]
 
     def __init__(self, *args, **kwargs):
@@ -60,6 +70,7 @@ class AutoCompileKernel(BaseKernel):
             and code.startswith("%")
             or code.startswith("%%")
         ):
+            self.debug_msg("executing magic command")
             return await super().do_execute(
                 code,
                 silent,
@@ -78,7 +89,7 @@ class AutoCompileKernel(BaseKernel):
         # Get args specified in the code cell
         args = self.parse_args(code)
 
-        if args.verbose:
+        if args.verbose or self.debug:
             nonempty_args = {k: v for k, v in args.__dict__.items() if v != ""}
             self.print(json.dumps(nonempty_args, indent=2), STDERR)
 
@@ -86,53 +97,71 @@ class AutoCompileKernel(BaseKernel):
             src.write(code)
             self.print(f"wrote file {args.filename}")
 
-        if args.compiler is None:
+        if args.compiler is None or not args.should_compile:
             # No compiler means nothing to compile, so exit
             return success(self.execution_count)
 
-        # Attempt to compile to .o
+        # Attempt to compile to .o silently. If successful, detect whether main was defined.
         compile_cmd = self.command_compile(
             args.compiler, args.cflags, args.LDFLAGS, args.filename, args.obj
         )
-        self.print(f"$> {compile_cmd.string}")
-        result = await compile_cmd.run(self.stream_stdout, self.stream_stderr)
+        self.debug_msg("attempt to compile to .o")
+        result = await compile_cmd.run()  # silent
         if result != 0:
-            self.print(f"compilation failed with exit code {result}", dest=STDERR)
+            # failed to compile to .o, so repeat loud to report error
+            await compile_cmd.run(self.stream_stdout, self.stream_stderr)
+            return error("CompileFailed", "Compilation failed")
 
-        # Detect whether the cell defines a main function
+        # compiled ok, continue to detect main
+        self.debug_msg("detect whether main defined")
         if await self.command_detect_main(args.obj).run() != 0:
-            # No main defined, so we're finished
+            # main not defined, so repeat to report compilation to .o and stop
+            self.debug_msg("main not defined: compile to .o and stop")
+            self.print(f"$> {compile_cmd.string}")
+            await compile_cmd.run(self.stream_stdout, self.stream_stderr)
             return success(self.execution_count)
-
-        # Since main was defined, attempt to link an executable
-        link_exe = self.command_link_exe(
-            args.compiler, args.LDFLAGS, args.exe, args.obj, args.depends
-        )
-        self.print(f"$> {link_exe.string}")
-        result = await link_exe.run(self.stream_stdout, self.stream_stderr)
-        if result != 0:
-            self.print(f"linking failed with exit code {result}", dest=STDERR)
-
-        # Attempt to run the executable
-        run_exe = AsyncCommand(f"./{args.exe} {args.ARGS}")
-        self.print(f"$> {run_exe.string}")
-        result = await run_exe.run(self.stream_stdout, self.stream_stderr)
-        if result != 0:
-            self.print(f"executable failed with exit code {result}", dest=STDERR)
-
-        return success(self.execution_count)
+        else:
+            # main was defined, so compile & link in one command & report, then attempt to execute
+            self.debug_msg("main was defined: attempt to compile and run executable")
+            compile_exe_cmd = self.command_compile_exe(
+                args.compiler,
+                args.cflags,
+                args.LDFLAGS,
+                args.filename,
+                args.depends,
+                args.exe,
+            )
+            self.print(f"$> {compile_exe_cmd.string}")
+            result = await compile_exe_cmd.run(self.stream_stdout, self.stream_stderr)
+            if result != 0:
+                return error("CompileFailed", "Compilation failed")
+            if not args.should_exec:
+                return success(self.execution_count)
+            run_exe = AsyncCommand(f"./{args.exe} {args.ARGS}")
+            self.print(f"$> {run_exe.string}")
+            result = await run_exe.run(self.stream_stdout, self.stream_stderr)
+            if result != 0:
+                self.print(f"executable failed with exit code {result}", dest=STDERR)
+                return error("ExeFailed", "Executable failed")
+            return success(self.execution_count)
 
     def parse_args(self, code: str) -> Namespace:
         args = self.default_compiler_args()
         header, *lines = code.splitlines()
+        self.debug_msg(f"{header=}")
         assert header.startswith(self._tag_name)
         args.filename = header.removeprefix(self._tag_name).strip()
+        self.debug_msg(f"{args.filename=}")
 
         # Detect language used
         basename, ext = args.filename.split(".")
+        self.debug_msg(f"{basename=}, {ext=}")
         args.language = language.get(ext)
         args.obj = basename + ".o"
         args.exe = basename
+
+        args.should_compile = True
+        args.should_exec = True
 
         # Detect options
         for k, line in enumerate(lines, start=2):
@@ -140,10 +169,15 @@ class AutoCompileKernel(BaseKernel):
                 self._tag_opt
             ):
                 opt, _, rest = line.removeprefix(self._tag_opt).strip().partition(" ")
+                self.debug_msg(f"{opt=}, {rest=}")
                 if opt not in self._known_opts:
                     self.print(f"unknown option on line {k}: {opt}", STDERR)
                 elif opt == "VERBOSE":
                     args.verbose = True
+                elif opt == "NOEXEC":
+                    args.should_exec = False
+                elif opt == "NOCOMPILE":
+                    args.should_compile = False
                 else:
                     setattr(args, opt, rest)
 
@@ -177,6 +211,17 @@ class AutoCompileKernel(BaseKernel):
         objfile: str,
     ) -> AsyncCommand:
         return AsyncCommand(f"""{compiler} {cflags} {ldflags} -c {name} -o {objfile}""")
+
+    def command_compile_exe(
+        self: AutoCompileKernel,
+        compiler: str,
+        cflags: str,
+        ldflags: str,
+        name: str,
+        depends: str,
+        exe: str,
+    ) -> AsyncCommand:
+        return AsyncCommand(f"{compiler} {cflags} {ldflags} {depends} {name} -o {exe}")
 
     def command_detect_main(self, objfile: str) -> AsyncCommand:
         return AsyncCommand(f"""nm {objfile} | grep " T main" """)

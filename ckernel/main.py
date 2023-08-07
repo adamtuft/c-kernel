@@ -41,6 +41,7 @@ def install(
     prefix: str,
     c_compiler: str,
     cpp_compiler: str,
+    debug: bool,
 ) -> None:
     """Install a specific kernel"""
 
@@ -66,6 +67,8 @@ def install(
     ).split()
     spec["display_name"] = display_name or kernel
     spec["env"] = {"CKERNEL_CC": c_compiler, "CKERNEL_CXX": cpp_compiler}
+    if debug:
+        spec["env"]["CKERNEL_DEBUG"] = "TRUE"
 
     with open(specdir / pathlib.Path("kernel.json"), "w", encoding="utf-8") as specfile:
         json.dump(spec, specfile, indent=4)
@@ -124,18 +127,23 @@ def main(prog: typing.Optional[str] = None) -> None:
     parse_install.add_argument(
         "--cc",
         help="the C compiler which this kernel should use",
-        default="/usr/bin/gcc",
+        default="gcc",
     )
     parse_install.add_argument(
         "--cxx",
         help="the C++ compiler which this kernel should use",
-        default="/usr/bin/g++",
+        default="g++",
     )
     parse_install.add_argument(
         "--user", action="store_true", help="install per-user only"
     )
     parse_install.add_argument(
         "--prefix", help="install under {prefix}/share/jupyter/kernels", metavar="path"
+    )
+    parse_install.add_argument(
+        "--debug",
+        action="store_true",
+        help="kernel reports debug messages to notebook user",
     )
 
     # Parse the run subcommand
@@ -174,6 +182,7 @@ def main(prog: typing.Optional[str] = None) -> None:
                 args.prefix,
                 args.cc,
                 args.cxx,
+                args.debug,
             )
     elif args.command == Command.RUN:
         IPKernelApp.launch_instance(kernel_class=ckernel.get_cls(args.kernel))

@@ -1,5 +1,6 @@
 """Implements BaseKernel"""
 
+import os
 from typing import Coroutine
 from asyncio import StreamReader
 from ipykernel.ipkernel import IPythonKernel
@@ -16,6 +17,10 @@ class BaseKernel(IPythonKernel):
         "name": "c",
         "codemirror_mode": "text/x-csrc",
     }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.debug = os.getenv("CKERNEL_DEBUG") is not None
 
     @property
     def banner(self):
@@ -50,3 +55,7 @@ class BaseKernel(IPythonKernel):
         self.send_response(
             self.iopub_socket, "stream", {"name": dest, "text": text + end}
         )
+
+    def debug_msg(self, text: str):
+        if self.debug:
+            self.print(f"[DEBUG] {text}", dest=STDERR)
