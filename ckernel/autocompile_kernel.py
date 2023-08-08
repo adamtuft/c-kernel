@@ -1,10 +1,10 @@
 """Implements AutoCompileKernel"""
 
 from __future__ import annotations
-
 import json
 import os
 import sys
+from contextlib import contextmanager
 from argparse import Namespace
 from typing import List, Optional
 
@@ -42,6 +42,7 @@ class AutoCompileKernel(BaseKernel):
         super().__init__(*args, **kwargs)
         self.CC = os.getenv("CKERNEL_CC")
         self.CXX = os.getenv("CKERNEL_CXX")
+        self._active_commands: set[AsyncCommand] = set()
 
     async def do_execute(self, *args, **kwargs):
         """Catch all exceptions and report them in the notebook"""
@@ -52,6 +53,23 @@ class AutoCompileKernel(BaseKernel):
             message, result = error_from_exception(*sys.exc_info())
             self.print(message, dest=STDERR)
         return result
+
+    def do_shutdown(self, restart):
+        """Process a restart/shutdown request"""
+        for command in self._active_commands:
+            self.log.error("kill %s", command)
+            command.terminate()
+        return super().do_shutdown(restart)
+
+    @contextmanager
+    def active_command(self, command: AsyncCommand):
+        """Add a command to the set of active commands while it is active"""
+        self._active_commands.add(command)
+        yield
+        try:
+            self._active_commands.remove(command)
+        except KeyError:
+            self.log.error("active command not found: %s", command)
 
     async def autocompile(
         self,
@@ -137,9 +155,10 @@ class AutoCompileKernel(BaseKernel):
                 return error("CompileFailed", "Compilation failed")
             if not args.should_exec:
                 return success(self.execution_count)
-            run_exe = AsyncCommand(f"./{args.exe} {args.ARGS}")
+            run_exe = AsyncCommand(f"./{args.exe} {args.ARGS}", logger=self.log)
             self.print(f"$> {run_exe.string}")
-            result = await run_exe.run(self.stream_stdout, self.stream_stderr)
+            with self.active_command(run_exe):
+                result = await run_exe.run(self.stream_stdout, self.stream_stderr)
             if result != 0:
                 self.print(f"executable failed with exit code {result}", dest=STDERR)
                 return error("ExeFailed", "Executable failed")

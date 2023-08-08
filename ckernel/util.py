@@ -5,6 +5,7 @@ import traceback
 import asyncio
 from enum import Enum
 from typing import Optional, Callable, Coroutine
+from logging import Logger
 
 StreamConsumer = Callable[[asyncio.StreamReader], Coroutine[None, None, None]]
 
@@ -62,8 +63,10 @@ def error_from_exception(exc_type, exc, tb):
 class AsyncCommand:
     """Run an async command, streaming its stdout and stderr as directed."""
 
-    def __init__(self, command: str) -> None:
+    def __init__(self, command: str, logger: Optional[Logger] = None) -> None:
         self._command: str = command
+        self._proc: Optional[asyncio.subprocess.Process] = None
+        self.log: Optional[Logger] = logger
 
     @property
     def string(self) -> str:
@@ -76,15 +79,26 @@ class AsyncCommand:
         stderr: Optional[StreamConsumer] = None,
     ) -> int:
         """run the command, streaming output via stdout and stderr arguments"""
-        proc = await asyncio.create_subprocess_shell(
+        self._proc = await asyncio.create_subprocess_shell(
             self._command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         streams = []
         if stdout is not None:
-            streams.append(stdout(proc.stdout))
+            streams.append(stdout(self._proc.stdout))
         if stderr is not None:
-            streams.append(stderr(proc.stderr))
-        await asyncio.gather(*streams, proc.wait())
-        return proc.returncode
+            streams.append(stderr(self._proc.stderr))
+        await asyncio.gather(*streams, self._proc.wait())
+        result = self._proc.returncode
+        self._proc = None
+        return result
+
+    def terminate(self) -> None:
+        """Terminate the subprocess"""
+        if self.log:
+            self.log.error(
+                "[%s] terminate process: %s", self.__class__.__name__, self._proc
+            )
+        if self._proc is not None:
+            self._proc.terminate()
