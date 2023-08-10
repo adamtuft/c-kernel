@@ -1,13 +1,13 @@
 """Install and launch kernels"""
 
-import sys
-import typing
-import pathlib
-import tempfile
-import shutil
-import contextlib
 import argparse
+import contextlib
 import json
+import pathlib
+import shutil
+import sys
+import tempfile
+import typing
 from enum import Enum
 
 import colorama
@@ -22,6 +22,7 @@ class Command(Enum):
 
     INSTALL = "install"
     RUN = "run"
+    SHOW = "show"
 
 
 @contextlib.contextmanager
@@ -89,6 +90,18 @@ def install(
     print(f'installed {kernel} as {name} (display name "{display_name}") at {dest}')
 
 
+def show(name: str):
+    """Print the path to some resource"""
+    if name == "include":
+        for path in ckernel.resources.include_path:
+            print(path)
+    else:
+        path = ckernel.resources.get(name)
+        if path is None:
+            raise SystemExit(1)
+        print(path)
+
+
 def main(prog: typing.Optional[str] = None) -> None:
     """Install or run a kernel"""
 
@@ -96,6 +109,7 @@ def main(prog: typing.Optional[str] = None) -> None:
 
     install_help = "install a kernel"
     run_help = "run an installed kernel"
+    show_help = "print various source or resource paths"
 
     parser = argparse.ArgumentParser(prog=prog)
 
@@ -164,6 +178,21 @@ def main(prog: typing.Optional[str] = None) -> None:
         "-f", help="the connection file to use", metavar="connection"
     )
 
+    # Parse the show subcommand
+    parse_show = command_action.add_parser(
+        Command.SHOW.value,
+        help=show_help,
+        description=show_help,
+        formatter_class=formatter_class,
+    )
+
+    # Arguments to the show subcommand
+    parse_show.add_argument(
+        "name",
+        metavar="name",
+        help="the name of the resource to show, or 'include' to print all internal include paths",
+    )
+
     args = parser.parse_args()
 
     if args.version:
@@ -186,6 +215,8 @@ def main(prog: typing.Optional[str] = None) -> None:
             )
     elif args.command == Command.RUN:
         IPKernelApp.launch_instance(kernel_class=ckernel.get_cls(args.kernel))
+    elif args.command == Command.SHOW:
+        show(args.name)
     else:
         print(
             colorama.Fore.RED

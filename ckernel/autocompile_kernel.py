@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import sys
@@ -9,6 +10,7 @@ from argparse import Namespace
 from contextlib import contextmanager
 from typing import List, Optional
 
+from . import resources
 from .base_kernel import BaseKernel
 from .util import (
     STDERR,
@@ -18,6 +20,7 @@ from .util import (
     error_from_exception,
     language,
     success,
+    uuid,
 )
 
 
@@ -45,6 +48,23 @@ class AutoCompileKernel(BaseKernel):
         self.CXX = os.getenv("CKERNEL_CXX")
         self._active_commands: set[AsyncCommand] = set()
 
+        self._internal_include_flags = " ".join(
+            f"-I{path}" for path in resources.include_path
+        )
+
+        ck_src: str = resources.ckernel_mqueue_src
+        self.log.error("got source path: %s", ck_src)
+        self._ck_obj = f"/tmp/ck_mqueue_{uuid()}.o"
+        self.log.error("compile into temporary .o file at %s", self._ck_obj)
+        if self.debug:
+            cmd = f"{self.CC} -DCKERNEL_WITH_DEBUG -c {ck_src} -o {self._ck_obj}"
+        else:
+            cmd = f"{self.CC} -c {ck_src} -o {self._ck_obj}"
+        self.log.error("run: %s", cmd)
+        compile = AsyncCommand(cmd)
+        result = asyncio.get_event_loop().run_until_complete(compile.run())
+        self.log.error(f"{result=}")
+
     async def do_execute(self, *args, **kwargs):
         """Catch all exceptions and report them in the notebook"""
         result = None
@@ -60,6 +80,9 @@ class AutoCompileKernel(BaseKernel):
         for command in self._active_commands:
             self.log.error("kill %s", command)
             command.terminate()
+        if os.path.isfile(self._ck_obj):
+            self.log.error("unlink %s", self._ck_obj)
+            os.unlink(self._ck_obj)
         return super().do_shutdown(restart)
 
     @contextmanager
@@ -128,10 +151,27 @@ class AutoCompileKernel(BaseKernel):
         )
         self.debug_msg("attempt to compile to .o")
         result = await compile_cmd.run()  # silent
-        if result != 0:
+
+        # want to abort if any warnings here, otherwise warnings will be shown after we compile the modified source
+        if result != 0:  # OR any warnings were reported
             # failed to compile to .o, so repeat loud to report error
             await compile_cmd.run(self.stream_stdout, self.stream_stderr)
             return error("CompileFailed", "Compilation failed")
+
+        # Prepend mqueue header to source file to add input wrappers and re-compile, overwriting args.obj
+        with open(args.filename, "w", encoding="utf-8") as src:
+            src.write(
+                "\n".join(
+                    [
+                        "/* added by ckernel */",
+                        "#if defined(CK_WITH_INPUT_WRAPPERS)",
+                        '#include "ckernel_mqueue.h"',
+                        "#endif",
+                        "/* added by ckernel */\n",
+                    ]
+                )
+            )
+            src.write(code)
 
         # compiled ok, continue to detect main
         self.debug_msg("detect whether main defined")
@@ -139,6 +179,17 @@ class AutoCompileKernel(BaseKernel):
             # main not defined, so repeat to report compilation to .o and stop
             self.debug_msg("main not defined: compile to .o and stop")
             self.print(f"$> {compile_cmd.string}")
+            # Lie to user - actually want to silently add our input wrappers
+            compile_cmd = self.command_compile(
+                args.compiler,
+                args.cflags
+                + " -DCK_WITH_INPUT_WRAPPERS "
+                + self._internal_include_flags,
+                args.LDFLAGS,
+                args.filename,
+                args.obj,
+            )
+            self.log.error(f"run: {compile_cmd.string}")
             await compile_cmd.run(self.stream_stdout, self.stream_stderr)
             return success(self.execution_count)
         else:
@@ -152,7 +203,20 @@ class AutoCompileKernel(BaseKernel):
                 args.depends,
                 args.exe,
             )
+            # Lie to user - actually want to silently add our input wrappers to
+            # forward input requests to the frontend
             self.print(f"$> {compile_exe_cmd.string}")
+            compile_exe_cmd = self.command_compile_exe(
+                args.compiler,
+                args.cflags
+                + " -DCK_WITH_INPUT_WRAPPERS "
+                + self._internal_include_flags,
+                args.LDFLAGS,
+                args.filename,
+                args.depends + f" {self._ck_obj}",
+                args.exe,
+            )
+            self.log.error(f"run: {compile_exe_cmd.string}")
             result = await compile_exe_cmd.run(self.stream_stdout, self.stream_stderr)
             if result != 0:
                 return error("CompileFailed", "Compilation failed")

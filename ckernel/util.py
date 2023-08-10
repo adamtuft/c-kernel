@@ -184,8 +184,8 @@ class AsyncCommand:
         self._debug("subprocess complete")
         return proc.returncode
 
-    @contextmanager
     @staticmethod
+    @contextmanager
     def _cancelling_task(func: Callable):
         task = asyncio.get_running_loop().run_in_executor(None, func)
         yield task

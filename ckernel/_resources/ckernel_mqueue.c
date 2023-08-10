@@ -33,9 +33,11 @@
 
 static mqd_t stdin_mq = -1;
 
-static char *(*fgets_fp)(char *s, int size, FILE *stream) = NULL;
+char *(*fgets_fp)(char *s, int size, FILE *stream) = NULL;
+int (*scanf_fp)(const char *format, ...) = NULL;
 
 static char *ck_fgets(char *s, int size, FILE *stream);
+static int ck_scanf(const char *format, ...);
 
 static void __attribute__((constructor)) ck_setup(void)
 {
@@ -48,6 +50,7 @@ static void __attribute__((constructor)) ck_setup(void)
         // stdin is not a FIFO (i.e. not from subprocess.PIPE), so don't use message queue for input request
         CKDEBUG("stdin is not FIFO");
         fgets_fp = fgets;
+        scanf_fp = scanf;
         return;
     }
 
@@ -58,6 +61,7 @@ static void __attribute__((constructor)) ck_setup(void)
 
     // point to IO wrapper functions
     fgets_fp = ck_fgets;
+    scanf_fp = ck_scanf;
 
     const char *mq_name = NULL;
     if ((mq_name = getenv("CK_MQNAME")) == NULL)
@@ -71,12 +75,27 @@ static void __attribute__((constructor)) ck_setup(void)
     return;
 }
 
-static char *ck_fgets(char *s, int size, FILE *stream)
+static void mq_request_input(void)
 {
     static const char *msg = "READY";
     CKDEBUG("signal waiting for input");
     mq_send(stdin_mq, msg, strlen(msg), 0);
     CKDEBUG("ready for input");
+}
+
+static char *ck_fgets(char *s, int size, FILE *stream)
+{
+    mq_request_input();
     char *result = fgets(s, size, stream);
+    return result;
+}
+
+static int ck_scanf(const char *format, ...)
+{
+    mq_request_input();
+    va_list args;
+    va_start(args, format);
+    int result = vscanf(format, args);
+    va_end(args);
     return result;
 }
