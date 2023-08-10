@@ -1,18 +1,19 @@
 """Implements AutoCompileKernel"""
 
 from __future__ import annotations
+
 import json
 import os
 import sys
-from contextlib import contextmanager
 from argparse import Namespace
+from contextlib import contextmanager
 from typing import List, Optional
 
 from .base_kernel import BaseKernel
 from .util import (
+    STDERR,
     AsyncCommand,
     Lang,
-    STDERR,
     error,
     error_from_exception,
     language,
@@ -98,6 +99,8 @@ class AutoCompileKernel(BaseKernel):
                 cell_id=cell_id,
             )
 
+        self._allow_stdin = allow_stdin
+
         # Cell must be named
         if not code.startswith(self._tag_name):
             message = f'[ERROR] code cell must start with "{self._tag_name} [filename]"'
@@ -158,7 +161,9 @@ class AutoCompileKernel(BaseKernel):
             run_exe = AsyncCommand(f"./{args.exe} {args.ARGS}", logger=self.log)
             self.print(f"$> {run_exe.string}")
             with self.active_command(run_exe):
-                result = await run_exe.run(self.stream_stdout, self.stream_stderr)
+                result = await run_exe.run(
+                    self.stream_stdout, self.stream_stderr, self.write_input
+                )
             if result != 0:
                 self.print(f"executable failed with exit code {result}", dest=STDERR)
                 return error("ExeFailed", "Executable failed")

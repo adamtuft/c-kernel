@@ -1,11 +1,12 @@
 """Implements BaseKernel"""
 
 import os
+from asyncio import StreamReader, StreamWriter
 from typing import Coroutine
-from asyncio import StreamReader
+
 from ipykernel.ipkernel import IPythonKernel
 
-from .util import Stream, STDOUT, STDERR
+from .util import STDERR, STDOUT, Stream, Trigger
 
 
 class BaseKernel(IPythonKernel):
@@ -49,6 +50,17 @@ class BaseKernel(IPythonKernel):
     def stream_stderr(self, reader: StreamReader) -> Coroutine[None, None, None]:
         """Return a coroutine which streams data from reader to stderr"""
         return self.stream_data(STDERR, reader, end="")
+
+    def write_input(
+        self, writer: StreamWriter, input_trigger: Trigger, prompt: str = ""
+    ):
+        """Get input and send to writer. Wait for input request from input_trigger"""
+        while True:
+            input_trigger.wait()
+            data = (
+                self.raw_input(prompt=prompt) + "\n"
+            )  # add a newline because self.raw_input does not
+            writer.write(data.encode())
 
     def print(self, text: str, dest: Stream = STDOUT, end: str = "\n"):
         """Print to the kernel's stream dest"""
