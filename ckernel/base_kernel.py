@@ -1,7 +1,8 @@
 """Implements BaseKernel"""
 
+import asyncio
+import logging
 import os
-from asyncio import StreamReader, StreamWriter
 from typing import Coroutine
 
 from ipykernel.ipkernel import IPythonKernel
@@ -23,6 +24,28 @@ class BaseKernel(IPythonKernel):
         super().__init__(*args, **kwargs)
         self.debug = os.getenv("CKERNEL_DEBUG") is not None
 
+        if self.debug and self.log.hasHandlers():
+            # set the handler for our logger to INFO. Don't use DEBUG, IPython
+            # is too verbose to be useful!
+            handler = self.log.handlers[0]
+            current = str(handler)
+            handler.setLevel(logging.INFO)
+            self.log.info("update handler level: %s is now %s", current, handler)
+
+    @property
+    def cwd(self):
+        return os.getcwd()
+
+    def log_info(self, msg: str, *args):
+        """Log an info message with the class of self prepended"""
+        _msg = f"[{self.__class__.__name__}] {msg}"
+        self.log.info(_msg, *args)
+
+    def log_error(self, msg: str, *args):
+        """Log an info message with the class of self prepended"""
+        _msg = f"[{self.__class__.__name__}] {msg}"
+        self.log.error(_msg, *args)
+
     @property
     def banner(self):
         return "\n".join(
@@ -37,26 +60,35 @@ class BaseKernel(IPythonKernel):
         )
 
     async def stream_data(
-        self, dest: Stream, reader: StreamReader, end: str = ""
+        self, dest: Stream, reader: asyncio.StreamReader, end: str = ""
     ) -> None:
         """Decode and stream data from reader to dest"""
         async for data in reader:
             self.print(data.decode(), dest=dest, end=end)
 
-    def stream_stdout(self, reader: StreamReader) -> Coroutine[None, None, None]:
+    async def gather_data(self, dest: list[str], reader: asyncio.StreamReader) -> None:
+        """Gather data into a list of str"""
+        async for data in reader:
+            dest.append(data.decode())
+
+    def stream_stdout(
+        self, reader: asyncio.StreamReader
+    ) -> Coroutine[None, None, None]:
         """Return a coroutine which streams data from reader to stdout"""
         return self.stream_data(STDOUT, reader, end="")
 
-    def stream_stderr(self, reader: StreamReader) -> Coroutine[None, None, None]:
+    def stream_stderr(
+        self, reader: asyncio.StreamReader
+    ) -> Coroutine[None, None, None]:
         """Return a coroutine which streams data from reader to stderr"""
         return self.stream_data(STDERR, reader, end="")
 
     def write_input(
-        self, writer: StreamWriter, input_trigger: Trigger, prompt: str = ""
+        self, writer: asyncio.StreamWriter, trigger: Trigger, prompt: str = ""
     ):
-        """Get input and send to writer. Wait for input request from input_trigger"""
+        """Get input and send to writer. Wait for input request from trigger"""
         while True:
-            input_trigger.wait()
+            trigger.wait()
             data = (
                 self.raw_input(prompt=prompt) + "\n"
             )  # add a newline because self.raw_input does not

@@ -5,9 +5,12 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import shutil
 import sys
 from argparse import Namespace
 from contextlib import contextmanager
+from functools import partial
+from pathlib import Path
 from typing import List, Optional
 
 from . import resources
@@ -20,7 +23,7 @@ from .util import (
     error_from_exception,
     language,
     success,
-    uuid,
+    temporary_directory,
 )
 
 
@@ -40,30 +43,43 @@ class AutoCompileKernel(BaseKernel):
         "ARGS",
         "NOCOMPILE",
         "NOEXEC",
+        "--STDIN",  # use stdin forwarding to send input to subprocess
     ]
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+
+        # request a temporary working dir for this session
+        self.twd = temporary_directory(prefix="ipython-ckernel-")
+        self.log_info("cwd: %s", self.cwd)
+        self.log_info("twd: %s", self.twd)
+
+        # get default compilers from the environment
         self.CC = os.getenv("CKERNEL_CC")
         self.CXX = os.getenv("CKERNEL_CXX")
+
+        # store active command(s) for safe termination
         self._active_commands: set[AsyncCommand] = set()
 
-        self._internal_include_flags = " ".join(
+        # include paths for internal headers
+        self._internal_include_paths = " ".join(
             f"-I{path}" for path in resources.include_path
         )
 
+        # compile internal input wrappers
         ck_src: str = resources.ckernel_mqueue_src
-        self.log.error("got source path: %s", ck_src)
-        self._ck_obj = f"/tmp/ck_mqueue_{uuid()}.o"
-        self.log.error("compile into temporary .o file at %s", self._ck_obj)
+        self.ck_obj = self.twd / "ck_mqueue.o"
         if self.debug:
-            cmd = f"{self.CC} -DCKERNEL_WITH_DEBUG -c {ck_src} -o {self._ck_obj}"
+            compile_cmd = AsyncCommand(
+                f"{self.CC} -DCKERNEL_WITH_DEBUG -c {ck_src} -o {self.ck_obj}"
+            )
         else:
-            cmd = f"{self.CC} -c {ck_src} -o {self._ck_obj}"
-        self.log.error("run: %s", cmd)
-        compile = AsyncCommand(cmd)
-        result = asyncio.get_event_loop().run_until_complete(compile.run())
-        self.log.error(f"{result=}")
+            compile_cmd = AsyncCommand(f"{self.CC} -c {ck_src} -o {self.ck_obj}")
+        self.log_info("%s", compile_cmd)
+        result, *_ = asyncio.get_event_loop().run_until_complete(compile_cmd.run())
+        if result != 0:
+            self.log_error("failed to compile %s to %s", ck_src, self.ck_obj)
+            self.log_error("result: %s", result)
 
     async def do_execute(self, *args, **kwargs):
         """Catch all exceptions and report them in the notebook"""
@@ -78,22 +94,25 @@ class AutoCompileKernel(BaseKernel):
     def do_shutdown(self, restart):
         """Process a restart/shutdown request"""
         for command in self._active_commands:
-            self.log.error("kill %s", command)
+            self.log_info("kill %s", command)
             command.terminate()
-        if os.path.isfile(self._ck_obj):
-            self.log.error("unlink %s", self._ck_obj)
-            os.unlink(self._ck_obj)
+        if os.path.isfile(self.ck_obj):
+            self.log_info("unlink %s", self.ck_obj)
+            os.unlink(self.ck_obj)
+        if os.path.isdir(self.twd):
+            self.log_info("remove %s", self.twd)
+            shutil.rmtree(self.twd)
         return super().do_shutdown(restart)
 
     @contextmanager
     def active_command(self, command: AsyncCommand):
         """Add a command to the set of active commands while it is active"""
         self._active_commands.add(command)
-        yield
+        yield command
         try:
             self._active_commands.remove(command)
         except KeyError:
-            self.log.error("active command not found: %s", command)
+            self.log_info("active command not found: %s", command)
 
     async def autocompile(
         self,
@@ -105,6 +124,8 @@ class AutoCompileKernel(BaseKernel):
         cell_id=None,
     ):
         """Auto-compile (and possibly execute) a code cell"""
+
+        self._allow_stdin = allow_stdin
 
         # Scan for magics
         if (
@@ -121,8 +142,6 @@ class AutoCompileKernel(BaseKernel):
                 allow_stdin=allow_stdin,
                 cell_id=cell_id,
             )
-
-        self._allow_stdin = allow_stdin
 
         # Cell must be named
         if not code.startswith(self._tag_name):
@@ -141,97 +160,114 @@ class AutoCompileKernel(BaseKernel):
             src.write(code)
             self.print(f"wrote file {args.filename}")
 
+        # Steps:
+        # 0. Create a copy of srcfile in self.twd with mqueue preamble
+        # 1. Compile to .o silently and detect whether main defined in this cell
+        # 2.
+
+        # Prepend mqueue header to source file to add input wrappers
+        with open(self.twd / args.filename, "w", encoding="utf-8") as src:
+            src.write('#include "ckernel_mqueue.h"\n')
+            src.write(code)
+            self.log_info("wrote file %s", src.name)
+
         if args.compiler is None or not args.should_compile:
             # No compiler means nothing to compile, so exit
             return success(self.execution_count)
 
-        # Attempt to compile to .o silently. If successful, detect whether main was defined.
+        # Attempt to compile to .o. Do this silently at first, because if
+        # successful we want to detect whether main was defined before
+        # reporting the actual compilation command to the user
         compile_cmd = self.command_compile(
             args.compiler, args.cflags, args.LDFLAGS, args.filename, args.obj
         )
         self.debug_msg("attempt to compile to .o")
-        result = await compile_cmd.run()  # silent
+        self.log_info("attempt to compile to .o")
+        result, _, stderr = await compile_cmd.run()  # silent
 
-        # want to abort if any warnings here, otherwise warnings will be shown after we compile the modified source
-        if result != 0:  # OR any warnings were reported
-            # failed to compile to .o, so repeat loud to report error
-            await compile_cmd.run(self.stream_stdout, self.stream_stderr)
+        if result != 0:
+            # failed to compile to .o, so report error
+            self.debug_msg("failed!")
+            self.log_info("failed!")
+            for line in stderr:
+                self.log_info(line.rstrip())
+                self.print(line, dest=STDERR, end="")
             return error("CompileFailed", "Compilation failed")
 
-        # Prepend mqueue header to source file to add input wrappers and re-compile, overwriting args.obj
-        with open(args.filename, "w", encoding="utf-8") as src:
-            src.write(
-                "\n".join(
-                    [
-                        "/* added by ckernel */",
-                        "#if defined(CK_WITH_INPUT_WRAPPERS)",
-                        '#include "ckernel_mqueue.h"',
-                        "#endif",
-                        "/* added by ckernel */\n",
-                    ]
-                )
-            )
-            src.write(code)
+        # compile internal copy with input wrappers
+        compile_internal = self.command_compile(
+            args.compiler,
+            args.cflags + f" -I{self.cwd} " + self._internal_include_paths,
+            args.LDFLAGS,
+            str(self.twd / args.filename),
+            str(self.twd / args.obj),
+        )
+        self.log_info("%s", compile_internal)
+        await compile_internal.run()
 
         # compiled ok, continue to detect main
         self.debug_msg("detect whether main defined")
-        if await self.command_detect_main(args.obj).run() != 0:
-            # main not defined, so repeat to report compilation to .o and stop
+
+        result, *_ = await self.command_detect_main(args.obj).run()
+        if result != 0:
+            # main not defined, so repeat to asynchronously report compilation
+            # to .o and stop
             self.debug_msg("main not defined: compile to .o and stop")
             self.print(f"$> {compile_cmd.string}")
-            # Lie to user - actually want to silently add our input wrappers
             compile_cmd = self.command_compile(
-                args.compiler,
-                args.cflags
-                + " -DCK_WITH_INPUT_WRAPPERS "
-                + self._internal_include_flags,
-                args.LDFLAGS,
-                args.filename,
-                args.obj,
-            )
-            self.log.error(f"run: {compile_cmd.string}")
-            await compile_cmd.run(self.stream_stdout, self.stream_stderr)
-            return success(self.execution_count)
-        else:
-            # main was defined, so compile & link in one command & report, then attempt to execute
-            self.debug_msg("main was defined: attempt to compile and run executable")
-            compile_exe_cmd = self.command_compile_exe(
                 args.compiler,
                 args.cflags,
                 args.LDFLAGS,
                 args.filename,
-                args.depends,
-                args.exe,
+                args.obj,
             )
-            # Lie to user - actually want to silently add our input wrappers to
-            # forward input requests to the frontend
-            self.print(f"$> {compile_exe_cmd.string}")
-            compile_exe_cmd = self.command_compile_exe(
-                args.compiler,
-                args.cflags
-                + " -DCK_WITH_INPUT_WRAPPERS "
-                + self._internal_include_flags,
-                args.LDFLAGS,
-                args.filename,
-                args.depends + f" {self._ck_obj}",
-                args.exe,
-            )
-            self.log.error(f"run: {compile_exe_cmd.string}")
-            result = await compile_exe_cmd.run(self.stream_stdout, self.stream_stderr)
-            if result != 0:
-                return error("CompileFailed", "Compilation failed")
-            if not args.should_exec:
-                return success(self.execution_count)
-            run_exe = AsyncCommand(f"./{args.exe} {args.ARGS}", logger=self.log)
-            self.print(f"$> {run_exe.string}")
-            with self.active_command(run_exe):
-                result = await run_exe.run(
-                    self.stream_stdout, self.stream_stderr, self.write_input
-                )
-            if result != 0:
-                self.print(f"executable failed with exit code {result}", dest=STDERR)
-                return error("ExeFailed", "Executable failed")
+            await compile_cmd.run(self.stream_stdout, self.stream_stderr)
             return success(self.execution_count)
+
+        # main was defined, so compile & link in one command & report, then attempt to execute
+        self.debug_msg("main was defined: attempt to compile and run executable")
+        compile_exe_cmd = self.command_compile_exe(
+            args.compiler,
+            args.cflags,
+            args.LDFLAGS,
+            args.filename,
+            args.depends,
+            args.exe,
+        )
+        self.print(f"$> {compile_exe_cmd.string}")
+        compile_exe_internal = self.command_compile_exe(
+            args.compiler,
+            args.cflags + f" -I{self.cwd} " + self._internal_include_paths,
+            args.LDFLAGS,
+            str(self.twd / args.filename),
+            args.depends + f" {self.ck_obj}",
+            str(self.twd / args.exe),
+        )
+        self.log_info(f"{compile_exe_cmd.string}")
+        self.log_info(f"internal exe: {compile_exe_internal.string}")
+        result, *_ = await compile_exe_cmd.run(self.stream_stdout, self.stream_stderr)
+        if result != 0:
+            return error("CompileFailed", "Compilation failed")
+        # Compiled and linked ok, so compile internal exe
+        result, _, stderr = await compile_exe_internal.run()
+        for line in stderr:
+            self.log_error("%s", line.rstrip())
+        if not args.should_exec:
+            return success(self.execution_count)
+        run_exe = AsyncCommand(f"./{args.exe} {args.ARGS}", logger=self.log)
+        run_internal_exe = AsyncCommand(
+            f"{str(self.twd / args.exe)} {args.ARGS}", logger=self.log
+        )
+        self.print(f"$> {run_exe.string}")
+        self.log_info(f"$> {run_internal_exe.string}")
+        with self.active_command(run_internal_exe) as command:
+            result, *_ = await command.run(
+                self.stream_stdout, self.stream_stderr, self.write_input
+            )
+        if result != 0:
+            self.print(f"executable failed with exit code {result}", dest=STDERR)
+            return error("ExeFailed", "Executable failed")
+        return success(self.execution_count)
 
     def parse_args(self, code: str) -> Namespace:
         args = self.default_compiler_args()

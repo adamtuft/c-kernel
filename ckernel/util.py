@@ -9,6 +9,8 @@ from contextlib import contextmanager
 from enum import Enum
 from functools import partial
 from logging import Logger
+from pathlib import Path
+from tempfile import mkdtemp
 from typing import Callable, Coroutine, NoReturn, Optional, Protocol
 from uuid import uuid1 as uuid
 
@@ -16,9 +18,24 @@ from ipcqueue.posixmq import Queue as PosixMQ
 from ipcqueue.serializers import RawSerializer
 
 
-def debug(logger: Optional[Logger], name: str, msg: str, *args) -> None:
-    if logger:
-        logger.debug("[%s] " + msg, name, *args)
+def temporary_directory(prefix: Optional[str] = None):
+    "Return a temporary directory"
+    return Path(mkdtemp(prefix=prefix))
+
+
+def log_info(log: Optional[Logger], prefix: str):
+    "Send a prefixed info message"
+    if log:
+
+        def inner(msg: str, *args) -> None:
+            log.info("[%s] " + msg, prefix, *args)
+
+    else:
+
+        def inner(*_) -> None:
+            pass
+
+    return inner
 
 
 class Trigger:
@@ -28,8 +45,8 @@ class Trigger:
         self, timeout: Optional[int] = None, logger: Optional[Logger] = None
     ) -> None:
         self._name = "/" + str(uuid())
-        self._debug = partial(debug, logger, self.__class__.__name__)
-        self._debug("%s created", self.name)
+        self.log_info = log_info(logger, self.__class__.__name__)
+        self.log_info("%s created", self.name)
         self.timeout = timeout
 
     @property
@@ -38,15 +55,15 @@ class Trigger:
 
     def wait(self):
         """Block until ready to trigger"""
-        self._debug("%s wait", self.name)
+        self.log_info("%s wait", self.name)
         self._mq.get(timeout=self.timeout)
 
     def start(self):
-        self._debug("%s start", self.name)
+        self.log_info("%s start", self.name)
         self._mq = PosixMQ(self._name, serializer=RawSerializer)
 
     def stop(self, unlink: bool = True):
-        self._debug("%s stop", self.name)
+        self.log_info("%s stop", self.name)
         self._mq.close()
         if unlink:
             self._mq.unlink()
@@ -123,66 +140,79 @@ def error_from_exception(exc_type, exc, tb):
 class AsyncCommand:
     """Run an async command, streaming its stdout and stderr as directed."""
 
+    # TODO: add option to return stdout & stderr instead of streaming somewhere
+
     def __init__(self, command: str, logger: Optional[Logger] = None) -> None:
+        self.log_info = log_info(logger, self.__class__.__name__)
         self._command: str = command
         self._proc: Optional[asyncio.subprocess.Process] = None
-        self._log: Optional[Logger] = logger
-        self._debug = partial(debug, logger, self.__class__.__name__)
-        self._stdin_trigger = Trigger(logger=self._log)
+        self._stdin_trigger = Trigger(logger=logger)
+
+    def __str__(self) -> str:
+        return self._command
 
     @property
     def string(self) -> str:
         """show the command"""
-        return self._command
+        return str(self)
 
     async def run(
         self: AsyncCommand,
         stdout: Optional[StreamConsumer] = None,
         stderr: Optional[StreamConsumer] = None,
         stdin: Optional[StreamWriter] = None,
-    ) -> int:
-        """run the command, streaming output via stdout and stderr arguments"""
+        **kwargs,
+    ):
+        """run the command, streaming output via stdout and stderr arguments.
+        If either is None, return a list[str] for the corresponding stream."""
 
-        env = os.environ.copy()
+        kwargs["bufsize"] = kwargs.get("bufsize", 0)
+        kwargs["env"] = kwargs.get("env", os.environ.copy())
+        env = kwargs["env"]
         env["CK_MQNAME"] = self._stdin_trigger.name
-        self._debug("env['CK_MQNAME']=%s", env["CK_MQNAME"])
+        self.log_info("env['CK_MQNAME']=%s", env["CK_MQNAME"])
 
         self._proc = await asyncio.create_subprocess_shell(
             self._command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             stdin=asyncio.subprocess.PIPE,
-            env=env,
-            bufsize=0,
+            **kwargs,
         )
 
-        if stdin is not None:
-            request_input = partial(
-                stdin, self._proc.stdin, self._stdin_trigger, prompt="stdin: "
+        stdout_lines: list[str] = []
+        stderr_lines: list[str] = []
+        stdout = stdout or partial(self.gather_data, stdout_lines)
+        stderr = stderr or partial(self.gather_data, stderr_lines)
+
+        with self.prepare_stdin(stdin, self._proc.stdin, self._stdin_trigger):
+            await asyncio.gather(
+                stdout(self._proc.stdout),
+                stderr(self._proc.stderr),
+                self._proc.wait(),
             )
-            with self._stdin_trigger.ready(), self._cancelling_task(request_input):
-                result = await self._await_subprocess(self._proc, stdout, stderr)
-        else:
-            result = await self._await_subprocess(self._proc, stdout, stderr)
 
-        return result
+        return self._proc.returncode, stdout_lines, stderr_lines
 
-    async def _await_subprocess(
+    @contextmanager
+    def prepare_stdin(
         self,
-        proc: asyncio.subprocess.Process,
-        stdout: Optional[StreamConsumer],
-        stderr: Optional[StreamConsumer],
-    ) -> int:
-        streams = []
-        if stdout is not None:
-            streams.append(stdout(proc.stdout))
-        if stderr is not None:
-            streams.append(stderr(proc.stderr))
+        stdin: Optional[StreamWriter],
+        proc_stdin: asyncio.StreamWriter,
+        stdin_trigger: Trigger,
+    ):
+        if stdin is not None:
+            with stdin_trigger.ready(), self._cancelling_task(
+                partial(stdin, proc_stdin, stdin_trigger, prompt="stdin: ")
+            ):
+                yield
+        else:
+            yield
 
-        self._debug("wait for subprocess")
-        await asyncio.gather(*streams, proc.wait())
-        self._debug("subprocess complete")
-        return proc.returncode
+    async def gather_data(self, lines: list[str], reader: asyncio.StreamReader) -> None:
+        """Gather data into a list of str"""
+        async for data in reader:
+            lines.append(data.decode())
 
     @staticmethod
     @contextmanager
@@ -193,7 +223,7 @@ class AsyncCommand:
 
     def terminate(self) -> None:
         """Terminate the subprocess"""
-        self._debug("terminate process: %s", self._proc)
+        self.log_info("terminate process: %s", self._proc)
         if self._proc is not None:
             self._proc.terminate()
         self._stdin_trigger.stop()
