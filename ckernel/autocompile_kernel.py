@@ -9,8 +9,6 @@ import shutil
 import sys
 from argparse import Namespace
 from contextlib import contextmanager
-from functools import partial
-from pathlib import Path
 from typing import List, Optional
 
 from . import resources
@@ -61,24 +59,17 @@ class AutoCompileKernel(BaseKernel):
         # store active command(s) for safe termination
         self._active_commands: set[AsyncCommand] = set()
 
-        # include paths for internal headers
-        self._internal_include_paths = " ".join(
-            f"-I{path}" for path in resources.include_path
+        # compile input wrappers
+        ck_dyn_src = resources.ckernel_dyn_input_wrappers_src
+        self.ck_dyn_obj = self.cwd / "ckernel-input-wrappers.o"
+        debug_flag = "-DCKERNEL_WITH_DEBUG" if self.debug else ""
+        compile_cmd = AsyncCommand(
+            f"{self.CC} {debug_flag} -c {ck_dyn_src} -o {self.ck_dyn_obj}"
         )
-
-        # compile internal input wrappers
-        ck_src: str = resources.ckernel_mqueue_src
-        self.ck_obj = self.twd / "ck_mqueue.o"
-        if self.debug:
-            compile_cmd = AsyncCommand(
-                f"{self.CC} -DCKERNEL_WITH_DEBUG -c {ck_src} -o {self.ck_obj}"
-            )
-        else:
-            compile_cmd = AsyncCommand(f"{self.CC} -c {ck_src} -o {self.ck_obj}")
         self.log_info("%s", compile_cmd)
         result, *_ = asyncio.get_event_loop().run_until_complete(compile_cmd.run())
         if result != 0:
-            self.log_error("failed to compile %s to %s", ck_src, self.ck_obj)
+            self.log_error("failed to compile %s to %s", ck_dyn_src, self.ck_dyn_obj)
             self.log_error("result: %s", result)
 
     async def do_execute(self, *args, **kwargs):
@@ -93,12 +84,14 @@ class AutoCompileKernel(BaseKernel):
 
     def do_shutdown(self, restart):
         """Process a restart/shutdown request"""
+        if restart:
+            self.log_info("====== R E S T A R T ======")
         for command in self._active_commands:
             self.log_info("kill %s", command)
             command.terminate()
-        if os.path.isfile(self.ck_obj):
-            self.log_info("unlink %s", self.ck_obj)
-            os.unlink(self.ck_obj)
+        for filename in filter(os.path.isfile, (self.ck_dyn_obj,)):
+            self.log_info("unlink %s", filename)
+            os.unlink(filename)
         if os.path.isdir(self.twd):
             self.log_info("remove %s", self.twd)
             shutil.rmtree(self.twd)
@@ -160,17 +153,6 @@ class AutoCompileKernel(BaseKernel):
             src.write(code)
             self.print(f"wrote file {args.filename}")
 
-        # Steps:
-        # 0. Create a copy of srcfile in self.twd with mqueue preamble
-        # 1. Compile to .o silently and detect whether main defined in this cell
-        # 2.
-
-        # Prepend mqueue header to source file to add input wrappers
-        with open(self.twd / args.filename, "w", encoding="utf-8") as src:
-            src.write('#include "ckernel_mqueue.h"\n')
-            src.write(code)
-            self.log_info("wrote file %s", src.name)
-
         if args.compiler is None or not args.should_compile:
             # No compiler means nothing to compile, so exit
             return success(self.execution_count)
@@ -193,17 +175,6 @@ class AutoCompileKernel(BaseKernel):
                 self.log_info(line.rstrip())
                 self.print(line, dest=STDERR, end="")
             return error("CompileFailed", "Compilation failed")
-
-        # compile internal copy with input wrappers
-        compile_internal = self.command_compile(
-            args.compiler,
-            args.cflags + f" -I{self.cwd} " + self._internal_include_paths,
-            args.LDFLAGS,
-            str(self.twd / args.filename),
-            str(self.twd / args.obj),
-        )
-        self.log_info("%s", compile_internal)
-        await compile_internal.run()
 
         # compiled ok, continue to detect main
         self.debug_msg("detect whether main defined")
@@ -235,32 +206,15 @@ class AutoCompileKernel(BaseKernel):
             args.exe,
         )
         self.print(f"$> {compile_exe_cmd.string}")
-        compile_exe_internal = self.command_compile_exe(
-            args.compiler,
-            args.cflags + f" -I{self.cwd} " + self._internal_include_paths,
-            args.LDFLAGS,
-            str(self.twd / args.filename),
-            args.depends + f" {self.ck_obj}",
-            str(self.twd / args.exe),
-        )
         self.log_info(f"{compile_exe_cmd.string}")
-        self.log_info(f"internal exe: {compile_exe_internal.string}")
         result, *_ = await compile_exe_cmd.run(self.stream_stdout, self.stream_stderr)
         if result != 0:
             return error("CompileFailed", "Compilation failed")
-        # Compiled and linked ok, so compile internal exe
-        result, _, stderr = await compile_exe_internal.run()
-        for line in stderr:
-            self.log_error("%s", line.rstrip())
         if not args.should_exec:
             return success(self.execution_count)
         run_exe = AsyncCommand(f"./{args.exe} {args.ARGS}", logger=self.log)
-        run_internal_exe = AsyncCommand(
-            f"{str(self.twd / args.exe)} {args.ARGS}", logger=self.log
-        )
         self.print(f"$> {run_exe.string}")
-        self.log_info(f"$> {run_internal_exe.string}")
-        with self.active_command(run_internal_exe) as command:
+        with self.active_command(run_exe) as command:
             result, *_ = await command.run(
                 self.stream_stdout, self.stream_stderr, self.write_input
             )

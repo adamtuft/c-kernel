@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+from pathlib import Path
 from typing import Coroutine
 
 from ipykernel.ipkernel import IPythonKernel
@@ -34,7 +35,7 @@ class BaseKernel(IPythonKernel):
 
     @property
     def cwd(self):
-        return os.getcwd()
+        return Path(os.getcwd())
 
     def log_info(self, msg: str, *args):
         """Log an info message with the class of self prepended"""
