@@ -10,6 +10,28 @@
 #include <fcntl.h>    // for O_ constants
 #include <dlfcn.h>    // for dlsym
 
+/**
+ * TODO:
+ * add wrappers for other standard input functions:
+ *
+ * read directly from stdin:
+ *  - getchar
+ *  - gets (before C11) /gets_s (since C11)
+ *  - vscanf
+ *
+ * read from a file stream:
+ *  - (f)getc
+ *  - fgets
+ *  - ungetc
+ *  - scanf_s (c11)
+ *  - fscanf(_s (c11))
+ *  - sscanf(_s (c11))
+ *  - vscanf_s (c11)
+ *  - vfscanf(_s (c11))
+ *  - vsscanf(_s (c11))
+ *
+ */
+
 #define THIRD_ARG(a, b, c, ...) c
 #define VA_OPT_AVAIL_I(...) THIRD_ARG(__VA_OPT__(, ), 1, 0, )
 #define VA_OPT_AVAIL VA_OPT_AVAIL_I(?)
@@ -33,10 +55,11 @@
 #define CKDEBUG(fmt, ...)
 #endif
 
+#define FP(name) name##_fp
 #define ATTACH_FP(name)                                          \
     do                                                           \
     {                                                            \
-        if ((name##_fp = dlsym(RTLD_NEXT, #name)) == NULL)       \
+        if ((FP(name) = dlsym(RTLD_NEXT, #name)) == NULL)        \
             CKERROR("failed to find symbol %s", 0, NULL, #name); \
         else                                                     \
         {                                                        \
@@ -47,9 +70,11 @@
 static bool request_input = false;
 static mqd_t stdin_mq = -1;
 
-char *(*fgets_fp)(char *s, int size, FILE *stream) = NULL;
-int (*scanf_fp)(const char *format, ...) = NULL;
+// pointers to real input functions
+char *(*FP(fgets))(char *s, int size, FILE *stream) = NULL;
+int (*FP(scanf))(const char *format, ...) = NULL;
 
+// input wrapper functions
 char *fgets(char *s, int size, FILE *stream);
 int scanf(const char *format, ...);
 
