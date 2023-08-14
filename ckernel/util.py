@@ -48,6 +48,9 @@ class Trigger:
         self.log_info = log_info(logger, self.__class__.__name__)
         self.log_info("%s created", self.name)
         self.timeout = timeout
+        # create the queue eagerly but leave it closed
+        self._mq = PosixMQ(self._name, serializer=RawSerializer)
+        self._mq.close()
 
     @property
     def name(self) -> str:
@@ -60,6 +63,7 @@ class Trigger:
 
     def start(self):
         self.log_info("%s start", self.name)
+        # re-open the queue (which was created during __init__)
         self._mq = PosixMQ(self._name, serializer=RawSerializer)
 
     def stop(self, unlink: bool = True):
