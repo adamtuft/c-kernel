@@ -85,6 +85,48 @@ static void __attribute__((constructor)) ck_setup(void)
     struct stat stdin_stat;
     fstat(fileno(stdin), &stdin_stat);
 
+#if defined(CKERNEL_WITH_DEBUG)
+    const char *file_type = NULL;
+    switch (stdin_stat.st_mode & S_IFMT)
+    {
+    case S_IFBLK:
+        file_type = "block device";
+        break;
+    case S_IFCHR:
+        file_type = "character device";
+        break;
+    case S_IFDIR:
+        file_type = "directory";
+        break;
+    case S_IFIFO:
+        file_type = "FIFO/pipe";
+        break;
+    case S_IFLNK:
+        CKDEBUG("symlink");
+        break;
+    case S_IFREG:
+        file_type = "regular file"; // i.e. redirected from file
+        break;
+    case S_IFSOCK:
+        file_type = "socket";
+        break;
+    default:
+        file_type = "unknown?";
+        break;
+    }
+    CKDEBUG("%-16s %s", "file type", file_type);
+    CKDEBUG("%-16s %d", "st_dev", stdin_stat.st_dev);         /* ID of device containing file */
+    CKDEBUG("%-16s %d", "st_ino", stdin_stat.st_ino);         /* Inode number */
+    CKDEBUG("%-16s 0%o", "st_mode", stdin_stat.st_mode);      /* File type and mode */
+    CKDEBUG("%-16s %d", "st_nlink", stdin_stat.st_nlink);     /* Number of hard links */
+    CKDEBUG("%-16s %d", "st_uid", stdin_stat.st_uid);         /* User ID of owner */
+    CKDEBUG("%-16s %d", "st_gid", stdin_stat.st_gid);         /* Group ID of owner */
+    CKDEBUG("%-16s %d", "st_rdev", stdin_stat.st_rdev);       /* Device ID (if special file) */
+    CKDEBUG("%-16s %d", "st_size", stdin_stat.st_size);       /* Total size, in bytes */
+    CKDEBUG("%-16s %d", "st_blksize", stdin_stat.st_blksize); /* Block size for filesystem I/O */
+    CKDEBUG("%-16s %d", "st_blocks", stdin_stat.st_blocks);   /* Number of 512 B blocks allocated */
+#endif
+
     // if stdin is FIFO (i.e. from subprocess.PIPE), use message queue for input request
     CKDEBUG("%s", S_ISFIFO(stdin_stat.st_mode) ? "stdin is FIFO" : "stdin is not FIFO");
     request_input = S_ISFIFO(stdin_stat.st_mode) ? true : false;
