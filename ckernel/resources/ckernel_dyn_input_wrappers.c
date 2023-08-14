@@ -127,9 +127,9 @@ static void __attribute__((constructor)) ck_setup(void)
     CKDEBUG("%-16s %d", "st_blocks", stdin_stat.st_blocks);   /* Number of 512 B blocks allocated */
 #endif
 
-    // if stdin is FIFO (i.e. from subprocess.PIPE), use message queue for input request
-    CKDEBUG("%s", S_ISFIFO(stdin_stat.st_mode) ? "stdin is FIFO" : "stdin is not FIFO");
-    request_input = S_ISFIFO(stdin_stat.st_mode) ? true : false;
+    // if stdin is NOT a regular file, use message queue for input request
+    CKDEBUG("%s", S_ISREG(stdin_stat.st_mode) ? "stdin is regular file" : "stdin is not regular file");
+    request_input = (!(S_ISREG(stdin_stat.st_mode))) ? true : false;
 
     if (setvbuf(stdout, NULL, _IONBF, 0) != 0)
     {
