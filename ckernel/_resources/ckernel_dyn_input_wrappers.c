@@ -11,8 +11,9 @@
 #include <dlfcn.h>    // for dlsym
 
 #define USE_C11 (__STDC_VERSION__ >= 201112L)
+#define USE_BOUNDS_CHECKING ((defined(__STDC_LIB_EXT1__)) && (__STDC_WANT_LIB_EXT1__ >= 1))
 #define NEED_gets (!(USE_C11))
-#define NEED_gets_s ((USE_C11) && (defined(__STDC_LIB_EXT1__)) && (__STDC_WANT_LIB_EXT1__ >= 1))
+#define NEED_gets_s ((USE_C11) && USE_BOUNDS_CHECKING)
 #define NEED_getdelim (defined(_GNU_SOURCE) || (defined(_POSIX_C_SOURCE) && (_POSIX_C_SOURCE >= 200809L)))
 #define NEED_FN(fn) NEED_##fn
 
@@ -67,7 +68,7 @@ struct input_fp
 #endif
     int (*getchar)(void);
     int (*vfscanf)(FILE *, const char *, va_list);
-#if USE_C11
+#if USE_C11 && USE_BOUNDS_CHECKING
     int (*vfscanf_s)(FILE *, const char *, va_list);
 #endif
 #if NEED_getdelim
@@ -77,7 +78,7 @@ struct input_fp
 
 static struct input_fp ifp = {0};
 
-void ck_request_input(FILE *stream);
+static void ck_request_input(FILE *stream);
 
 static void __attribute__((constructor)) ck_setup(void)
 {
@@ -104,7 +105,7 @@ static void __attribute__((constructor)) ck_setup(void)
 #endif
     ATTACH_FP(ifp, getchar);
     ATTACH_FP(ifp, vfscanf);
-#if USE_C11
+#if USE_C11 && USE_BOUNDS_CHECKING
     ATTACH_FP(ifp, vfscanf_s);
 #endif
 #if NEED_getdelim
@@ -206,7 +207,7 @@ int vfscanf(FILE *stream, const char *format, va_list args)
     return ifp.vfscanf(stream, format, args);
 }
 
-#if USE_C11
+#if USE_C11 && USE_BOUNDS_CHECKING
 int scanf_s(const char *format, ...)
 {
     ck_request_input(stdin);

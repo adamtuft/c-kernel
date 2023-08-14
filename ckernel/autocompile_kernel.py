@@ -41,7 +41,6 @@ class AutoCompileKernel(BaseKernel):
         "ARGS",
         "NOCOMPILE",
         "NOEXEC",
-        "--STDIN",  # use stdin forwarding to send input to subprocess
     ]
 
     def __init__(self, *args, **kwargs):
@@ -61,16 +60,20 @@ class AutoCompileKernel(BaseKernel):
 
         # compile input wrappers
         ck_dyn_src = resources.ckernel_dyn_input_wrappers_src
-        self.ck_dyn_obj = self.cwd / "ckernel-input-wrappers.o"
+        self.ck_dyn_obj = self.twd / "ckernel-input-wrappers.o"
         debug_flag = "-DCKERNEL_WITH_DEBUG" if self.debug else ""
         compile_cmd = AsyncCommand(
             f"{self.CC} {debug_flag} -c {ck_dyn_src} -o {self.ck_dyn_obj}"
         )
         self.log_info("%s", compile_cmd)
-        result, *_ = asyncio.get_event_loop().run_until_complete(compile_cmd.run())
+        result, _, stderr = asyncio.get_event_loop().run_until_complete(
+            compile_cmd.run()
+        )
         if result != 0:
             self.log_error("failed to compile %s to %s", ck_dyn_src, self.ck_dyn_obj)
             self.log_error("result: %s", result)
+            for line in stderr:
+                self.log_error(line.rstrip())
 
     async def do_execute(self, *args, **kwargs):
         """Catch all exceptions and report them in the notebook"""
@@ -184,7 +187,7 @@ class AutoCompileKernel(BaseKernel):
             # main not defined, so repeat to asynchronously report compilation
             # to .o and stop
             self.debug_msg("main not defined: compile to .o and stop")
-            self.print(f"$> {compile_cmd.string}")
+            self.print(f"$> {compile_cmd}")
             compile_cmd = self.command_compile(
                 args.compiler,
                 args.cflags,
@@ -197,6 +200,8 @@ class AutoCompileKernel(BaseKernel):
 
         # main was defined, so compile & link in one command & report, then attempt to execute
         self.debug_msg("main was defined: attempt to compile and run executable")
+
+        # report to the user the compilation command *without* the input wrappers
         compile_exe_cmd = self.command_compile_exe(
             args.compiler,
             args.cflags,
@@ -205,15 +210,26 @@ class AutoCompileKernel(BaseKernel):
             args.depends,
             args.exe,
         )
-        self.print(f"$> {compile_exe_cmd.string}")
-        self.log_info(f"{compile_exe_cmd.string}")
+        self.print(f"$> {compile_exe_cmd}")
+
+        # now add self.ck_dyn_obj to args.depends to add input wrappers
+        compile_exe_cmd = self.command_compile_exe(
+            args.compiler,
+            args.cflags,
+            args.LDFLAGS,
+            args.filename,
+            f"{self.ck_dyn_obj} " + args.depends,
+            args.exe,
+        )
+        self.log_info(f"{compile_exe_cmd}")
+
         result, *_ = await compile_exe_cmd.run(self.stream_stdout, self.stream_stderr)
         if result != 0:
             return error("CompileFailed", "Compilation failed")
         if not args.should_exec:
             return success(self.execution_count)
         run_exe = AsyncCommand(f"./{args.exe} {args.ARGS}", logger=self.log)
-        self.print(f"$> {run_exe.string}")
+        self.print(f"$> {run_exe}")
         with self.active_command(run_exe) as command:
             result, *_ = await command.run(
                 self.stream_stdout, self.stream_stderr, self.write_input

@@ -151,11 +151,6 @@ class AsyncCommand:
     def __str__(self) -> str:
         return self._command
 
-    @property
-    def string(self) -> str:
-        """show the command"""
-        return str(self)
-
     async def run(
         self: AsyncCommand,
         stdout: Optional[StreamConsumer] = None,
