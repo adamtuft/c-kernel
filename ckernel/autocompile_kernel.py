@@ -11,7 +11,7 @@ from argparse import Namespace
 from contextlib import contextmanager
 from typing import List, Optional
 
-from . import resources
+from . import resource
 from .base_kernel import BaseKernel
 from .util import (
     STDERR,
@@ -59,7 +59,7 @@ class AutoCompileKernel(BaseKernel):
         self._active_commands: set[AsyncCommand] = set()
 
         # compile input wrappers
-        ck_dyn_src = resources.ckernel_dyn_input_wrappers_src
+        ck_dyn_src = resource.ckernel_dyn_input_wrappers_src
         self.ck_dyn_obj = self.twd / "ckernel-input-wrappers.o"
         debug_flag = "-DCKERNEL_WITH_DEBUG" if self.debug else ""
         compile_cmd = AsyncCommand(

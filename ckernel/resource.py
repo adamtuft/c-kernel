@@ -1,6 +1,6 @@
 from os import path
 
-from . import _resources
+import ckernel.resources
 
 try:
     import importlib.resources as resources
@@ -9,7 +9,7 @@ except ImportError:
 
 _all = {
     path.basename(item): item
-    for item in map(str, resources.files(_resources).iterdir())
+    for item in map(str, resources.files(ckernel.resources).iterdir())
 }
 
 

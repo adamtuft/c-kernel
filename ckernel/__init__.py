@@ -2,7 +2,7 @@
 
 __version__ = "0.1.1"
 
-from . import async_kernel, autocompile_kernel, base_kernel, resources
+from . import async_kernel, autocompile_kernel, base_kernel, resource
 
 kernels = {
     "AsyncKernel": async_kernel.AsyncKernel,
