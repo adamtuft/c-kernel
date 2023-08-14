@@ -10,27 +10,11 @@
 #include <fcntl.h>    // for O_ constants
 #include <dlfcn.h>    // for dlsym
 
-/**
- * TODO:
- * add wrappers for other standard input functions:
- *
- * read directly from stdin:
- *  - getchar
- *  - gets (before C11) /gets_s (since C11)
- *  - vscanf
- *
- * read from a file stream:
- *  - (f)getc
- *  - fgets
- *  - ungetc
- *  - scanf_s (c11)
- *  - fscanf(_s (c11))
- *  - sscanf(_s (c11))
- *  - vscanf_s (c11)
- *  - vfscanf(_s (c11))
- *  - vsscanf(_s (c11))
- *
- */
+#define USE_C11 (__STDC_VERSION__ >= 201112L)
+#define NEED_gets (!(USE_C11))
+#define NEED_gets_s ((USE_C11) && (defined(__STDC_LIB_EXT1__)) && (__STDC_WANT_LIB_EXT1__ >= 1))
+#define NEED_getdelim (defined(_GNU_SOURCE) || (defined(_POSIX_C_SOURCE) && (_POSIX_C_SOURCE >= 200809L)))
+#define NEED_FN(fn) NEED_##fn
 
 #define THIRD_ARG(a, b, c, ...) c
 #define VA_OPT_AVAIL_I(...) THIRD_ARG(__VA_OPT__(, ), 1, 0, )
@@ -56,10 +40,10 @@
 #endif
 
 #define FP(name) name##_fp
-#define ATTACH_FP(name)                                          \
+#define ATTACH_FP(s, name)                                       \
     do                                                           \
     {                                                            \
-        if ((FP(name) = dlsym(RTLD_NEXT, #name)) == NULL)        \
+        if ((s.name = dlsym(RTLD_NEXT, #name)) == NULL)          \
             CKERROR("failed to find symbol %s", 0, NULL, #name); \
         else                                                     \
         {                                                        \
@@ -71,12 +55,29 @@ static bool request_input = false;
 static mqd_t stdin_mq = -1;
 
 // pointers to real input functions
-char *(*FP(fgets))(char *s, int size, FILE *stream) = NULL;
-int (*FP(scanf))(const char *format, ...) = NULL;
+struct input_fp
+{
+    int (*fgetc)(FILE *);
+    char *(*fgets)(char *, int, FILE *);
+#if NEED_FN(gets_s)
+    char *(*gets_s)(char *, rsize_t);
+#endif
+#if NEED_FN(gets)
+    char *(*gets)(char *);
+#endif
+    int (*getchar)(void);
+    int (*vfscanf)(FILE *, const char *, va_list);
+#if USE_C11
+    int (*vfscanf_s)(FILE *, const char *, va_list);
+#endif
+#if NEED_getdelim
+    ssize_t (*getdelim)(char **, size_t *, int, FILE *);
+#endif
+};
 
-// input wrapper functions
-char *fgets(char *s, int size, FILE *stream);
-int scanf(const char *format, ...);
+static struct input_fp ifp = {0};
+
+void ck_request_input(FILE *stream);
 
 static void __attribute__((constructor)) ck_setup(void)
 {
@@ -84,8 +85,8 @@ static void __attribute__((constructor)) ck_setup(void)
     fstat(fileno(stdin), &stdin_stat);
 
     // if stdin is FIFO (i.e. from subprocess.PIPE), use message queue for input request
-    CKDEBUG("%s", (stdin_stat.st_mode & S_IFIFO) ? "stdin is FIFO" : "stdin is not FIFO");
-    request_input = (stdin_stat.st_mode & S_IFIFO) ? true : false;
+    CKDEBUG("%s", S_ISFIFO(stdin_stat.st_mode) ? "stdin is FIFO" : "stdin is not FIFO");
+    request_input = S_ISFIFO(stdin_stat.st_mode) ? true : false;
 
     if (setvbuf(stdout, NULL, _IONBF, 0) != 0)
     {
@@ -93,8 +94,22 @@ static void __attribute__((constructor)) ck_setup(void)
     }
 
     // point to actual input functions
-    ATTACH_FP(fgets);
-    ATTACH_FP(scanf);
+    ATTACH_FP(ifp, fgetc);
+    ATTACH_FP(ifp, fgets);
+#if NEED_FN(gets_s)
+    ATTACH_FP(ifp, gets_s);
+#endif
+#if NEED_FN(gets)
+    ATTACH_FP(ifp, gets);
+#endif
+    ATTACH_FP(ifp, getchar);
+    ATTACH_FP(ifp, vfscanf);
+#if USE_C11
+    ATTACH_FP(ifp, vfscanf_s);
+#endif
+#if NEED_getdelim
+    ATTACH_FP(ifp, getdelim);
+#endif
 
     // attempt to connect to message queue
     const char *mq_name = NULL;
@@ -109,9 +124,9 @@ static void __attribute__((constructor)) ck_setup(void)
     return;
 }
 
-static void mq_request_input(void)
+static void ck_request_input(FILE *stream)
 {
-    if (!request_input)
+    if (!(request_input && (stream == stdin)))
         return;
     static const char *msg = "READY";
     CKDEBUG("signal waiting for input");
@@ -119,19 +134,122 @@ static void mq_request_input(void)
     CKDEBUG("ready for input");
 }
 
+int getc(FILE *stream)
+{
+    ck_request_input(stream);
+    return ifp.fgetc(stream);
+}
+
+int fgetc(FILE *stream)
+{
+    ck_request_input(stream);
+    return ifp.fgetc(stream);
+}
+
+#if NEED_FN(gets_s)
+char *gets_s(char *str, rsize_t n)
+{
+    ck_request_input(stdin);
+    return ifp.gets_s(str, n);
+}
+#endif
+
+#if NEED_FN(gets)
+char *gets(char *str)
+{
+    ck_request_input(stdin);
+    return ifp.gets(str);
+}
+#endif
+
 char *fgets(char *s, int size, FILE *stream)
 {
-    mq_request_input();
-    char *result = fgets_fp(s, size, stream);
-    return result;
+    ck_request_input(stream);
+    return ifp.fgets(s, size, stream);
+}
+
+int getchar(void)
+{
+    ck_request_input(stdin);
+    return ifp.getchar();
 }
 
 int scanf(const char *format, ...)
 {
-    mq_request_input();
+    ck_request_input(stdin);
     va_list args;
     va_start(args, format);
-    int result = vscanf(format, args);
+    int result = ifp.vfscanf(stdin, format, args);
     va_end(args);
     return result;
 }
+
+int fscanf(FILE *stream, const char *format, ...)
+{
+    ck_request_input(stream);
+    va_list args;
+    va_start(args, format);
+    int result = ifp.vfscanf(stream, format, args);
+    va_end(args);
+    return result;
+}
+
+int vscanf(const char *format, va_list args)
+{
+    ck_request_input(stdin);
+    return ifp.vfscanf(stdin, format, args);
+}
+
+int vfscanf(FILE *stream, const char *format, va_list args)
+{
+    ck_request_input(stream);
+    return ifp.vfscanf(stream, format, args);
+}
+
+#if USE_C11
+int scanf_s(const char *format, ...)
+{
+    ck_request_input(stdin);
+    va_list args;
+    va_start(args, format);
+    int result = ifp.vfscanf_s(stdin, format, args);
+    va_end(args);
+    return result;
+}
+
+int fscanf_s(FILE *restrict stream, const char *restrict format, ...)
+{
+    ck_request_input(stream);
+    va_list args;
+    va_start(args, format);
+    int result = ifp.vfscanf_s(stream, format, args);
+    va_end(args);
+    return result;
+}
+
+int vscanf_s(const char *format, va_list args)
+{
+    ck_request_input(stdin);
+    return ifp.vfscanf_s(stdin, format, args);
+}
+
+int vfscanf_s(FILE *stream, const char *format, va_list args)
+{
+    ck_request_input(stream);
+    return ifp.vfscanf_s(stream, format, args);
+}
+#endif
+
+#if NEED_FN(getdelim)
+ssize_t getline(char **lineptr, size_t *n, FILE *stream)
+{
+    ck_request_input(stream);
+    return ifp.getdelim(lineptr, n, '\n', stream);
+}
+
+ssize_t getdelim(char **lineptr, size_t *n, int delimiter, FILE *stream)
+{
+    ck_request_input(stream);
+    return ifp.getdelim(lineptr, n, delimiter, stream);
+}
+#endif
