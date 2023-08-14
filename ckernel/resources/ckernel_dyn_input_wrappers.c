@@ -80,6 +80,61 @@ static struct input_fp ifp = {0};
 
 static void ck_request_input(FILE *stream);
 
+static void ck_describe_mq_file(const char *name)
+{
+    char mq_path[256] = {0};
+    snprintf(&mq_path[0], 255, "/dev/mqueue%s", name);
+    CKDEBUG("attempt to open mqueue %s", mq_path);
+    FILE *mq_file = NULL;
+    if ((mq_file = fopen(mq_path, "rb")) == NULL)
+    {
+        CKERROR("failed to open message queue at %s", errno, strerror(errno), mq_path);
+        return;
+    }
+    struct stat mq_stat;
+    fstat(fileno(mq_file), &mq_stat);
+    const char *file_type = NULL;
+    switch (mq_stat.st_mode & S_IFMT)
+    {
+    case S_IFBLK:
+        file_type = "block device";
+        break;
+    case S_IFCHR:
+        file_type = "character device";
+        break;
+    case S_IFDIR:
+        file_type = "directory";
+        break;
+    case S_IFIFO:
+        file_type = "FIFO/pipe";
+        break;
+    case S_IFLNK:
+        CKDEBUG("symlink");
+        break;
+    case S_IFREG:
+        file_type = "regular file"; // i.e. redirected from file
+        break;
+    case S_IFSOCK:
+        file_type = "socket";
+        break;
+    default:
+        file_type = "unknown?";
+        break;
+    }
+    CKDEBUG("%-16s %s", "file type", file_type);
+    CKDEBUG("%-16s %d", "st_dev", mq_stat.st_dev);         /* ID of device containing file */
+    CKDEBUG("%-16s %d", "st_ino", mq_stat.st_ino);         /* Inode number */
+    CKDEBUG("%-16s 0%o", "st_mode", mq_stat.st_mode);      /* File type and mode */
+    CKDEBUG("%-16s %d", "st_nlink", mq_stat.st_nlink);     /* Number of hard links */
+    CKDEBUG("%-16s %d", "st_uid", mq_stat.st_uid);         /* User ID of owner */
+    CKDEBUG("%-16s %d", "st_gid", mq_stat.st_gid);         /* Group ID of owner */
+    CKDEBUG("%-16s %d", "st_rdev", mq_stat.st_rdev);       /* Device ID (if special file) */
+    CKDEBUG("%-16s %d", "st_size", mq_stat.st_size);       /* Total size, in bytes */
+    CKDEBUG("%-16s %d", "st_blksize", mq_stat.st_blksize); /* Block size for filesystem I/O */
+    CKDEBUG("%-16s %d", "st_blocks", mq_stat.st_blocks);   /* Number of 512 B blocks allocated */
+    return;
+}
+
 static void __attribute__((constructor)) ck_setup(void)
 {
     struct stat stdin_stat;
@@ -158,6 +213,7 @@ static void __attribute__((constructor)) ck_setup(void)
     const char *mq_name = NULL;
     if ((mq_name = getenv("CK_MQNAME")) == NULL)
         mq_name = "NONE";
+    ck_describe_mq_file(mq_name);
     CKDEBUG("connect to queue %s", mq_name);
     if ((stdin_mq = mq_open(mq_name, O_WRONLY)) == -1)
     {
