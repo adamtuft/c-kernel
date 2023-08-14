@@ -9,7 +9,7 @@ description = "IPython kernels for teaching and learning C/C++ in a Jupyter note
 readme = "README.md"
 version = "0.1.1"
 authors = [{ name = "Adam Tuft" }]
-dependencies = ["ipykernel", "jupyter_client", "colorama"]
+dependencies = ["ipcqueue", "ipykernel", "jupyter_client", "colorama"]
 license = { file = "LICENSE" }
 classifiers = [
     "Development Status :: 3 - Alpha",
