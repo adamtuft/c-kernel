@@ -1,5 +1,7 @@
 # c-kernel
 
+![https://badgen.net/pypi/v/ckernel](https://pypi.org/project/ckernel/)
+
 IPython kernels for teaching and learning C/C++ in a Jupyter notebook, providing
 C/C++ syntax highlighting, automatic compilation and a little more magic.
 
@@ -48,6 +50,12 @@ The following options can be specified in a `//%` magic comment within a code ce
 | `NOEXEC`    | save and compile, but don't execute the code cell |                       |
 
 ## Installation
+
+To install with `pip`:
+
+```
+python3 -m pip install ckernel
+```
 
 To install from git:
 
