@@ -71,6 +71,16 @@ in Jupyter:
 <img src="img/demo-2.png">
 </p>
 
+Here are some commands for installing the kernel for use with `clang` and `gcc`, with both regular and debug versions:
+
+```bash
+python3 -m ckernel install AutoCompileKernel autocompile-gcc "Auto-compile C/C++ (gcc)" --user --cc gcc --cxx g++
+python3 -m ckernel install AutoCompileKernel autocompile-gcc-debug "Auto-compile C/C++ (gcc) (debug)" --user --debug --cc gcc --cxx g++
+python3 -m ckernel install AutoCompileKernel autocompile-clang "Auto-compile C/C++ (clang)" --user --cc clang --cxx clang++
+python3 -m ckernel install AutoCompileKernel autocompile-clang-debug "Auto-compile C/C++ (clang) (debug)" --user --debug --cc clang --cxx clang++
+jupyter kernelspec list
+```
+
 See `ckernel install --help` for all options.
 
 ## Issues
