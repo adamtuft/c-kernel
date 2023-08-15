@@ -93,14 +93,10 @@ def install(
 
 def show(name: str):
     """Print the path to some resource"""
-    if name == "include":
-        for path in ckernel.resource.include_path:
-            print(path)
-    else:
-        path = ckernel.resource.get(name)
-        if path is None:
-            raise SystemExit(1)
-        print(path)
+    path = ckernel.resource.get(name)
+    if path is None:
+        raise SystemExit(1)
+    print(path)
 
 
 def main(prog: typing.Optional[str] = None) -> None:

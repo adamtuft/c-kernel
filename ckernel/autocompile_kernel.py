@@ -67,7 +67,7 @@ class AutoCompileKernel(BaseKernel):
         self.log_info("using trigger %s", self.stdin_trigger)
 
         # compile input wrappers
-        dirname, ck_dyn_src = os.path.split(resource.ckernel_dyn_input_wrappers_src)
+        dirname, ck_dyn_src = os.path.split(resource.input_wrappers_src)
         self.ck_dyn_obj = self.twd / "ckernel-input-wrappers.o"
         debug_flag = "-DCKERNEL_WITH_DEBUG" if self.debug else ""
         compile_cmd = AsyncCommand(

@@ -18,6 +18,4 @@ def get(key: str, default=None):
     return _all.get(key, default)
 
 
-ckernel_mqueue_src = _all["ckernel_mqueue.c"]
-ckernel_dyn_input_wrappers_src = _all["ckernel_dyn_input_wrappers.c"]
-include_path = [_all["include"]]
+input_wrappers_src = _all["ck_input_wrappers.c"]

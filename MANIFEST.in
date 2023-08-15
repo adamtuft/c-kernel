@@ -1,3 +1,1 @@
-include ckernel/resources/ckernel_mqueue.c
-include ckernel/resources/ckernel_dyn_input_wrappers.c
-include ckernel/resources/include/ckernel_mqueue.h
+include ckernel/resources/ck_input_wrappers.c
