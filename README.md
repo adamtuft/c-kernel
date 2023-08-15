@@ -1,6 +1,8 @@
 # c-kernel
 
-![https://pypi.org/project/ckernel/](https://badgen.net/pypi/v/ckernel)
+<p align="center">
+<a href="https://pypi.org/project/ckernel/"><img src="https://badgen.net/pypi/v/ckernel"></a>
+</p>
 
 IPython kernels for teaching and learning C/C++ in a Jupyter notebook, providing
 C/C++ syntax highlighting, automatic compilation and a little more magic.
