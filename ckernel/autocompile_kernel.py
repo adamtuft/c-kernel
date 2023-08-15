@@ -22,6 +22,7 @@ from .util import (
     language,
     success,
     temporary_directory,
+    Trigger,
 )
 
 
@@ -58,16 +59,23 @@ class AutoCompileKernel(BaseKernel):
         # store active command(s) for safe termination
         self._active_commands: set[AsyncCommand] = set()
 
+        # create a trigger for stdin
+        self.stdin_trigger = Trigger(
+            logger=self.log, prefix=f"ipython-{self.__class__.__name__}-"
+        )
+        self.log_info("using trigger %s", self.stdin_trigger)
+
         # compile input wrappers
         ck_dyn_src = resource.ckernel_dyn_input_wrappers_src
         self.ck_dyn_obj = self.twd / "ckernel-input-wrappers.o"
         debug_flag = "-DCKERNEL_WITH_DEBUG" if self.debug else ""
         compile_cmd = AsyncCommand(
-            f"{self.CC} {debug_flag} -c {ck_dyn_src} -o {self.ck_dyn_obj}"
+            f"{self.CC} {debug_flag} -c {ck_dyn_src} -o {self.ck_dyn_obj}",
+            logger=self.log,
         )
         self.log_info("%s", compile_cmd)
         result, _, stderr = asyncio.get_event_loop().run_until_complete(
-            compile_cmd.run()
+            compile_cmd.run_silent()
         )
         if result != 0:
             self.log_error("failed to compile %s to %s", ck_dyn_src, self.ck_dyn_obj)
@@ -98,6 +106,8 @@ class AutoCompileKernel(BaseKernel):
         if os.path.isdir(self.twd):
             self.log_info("remove %s", self.twd)
             shutil.rmtree(self.twd)
+        self.log_info("unlink trigger %s", self.stdin_trigger)
+        self.stdin_trigger.stop(unlink=True)
         return super().do_shutdown(restart)
 
     @contextmanager
@@ -109,6 +119,10 @@ class AutoCompileKernel(BaseKernel):
             self._active_commands.remove(command)
         except KeyError:
             self.log_info("active command not found: %s", command)
+
+    # @contextmanager
+    # def active_trigger(self, trigger: Trigger):
+    #     ...
 
     async def autocompile(
         self,
@@ -168,7 +182,7 @@ class AutoCompileKernel(BaseKernel):
         )
         self.debug_msg("attempt to compile to .o")
         self.log_info("attempt to compile to .o")
-        result, _, stderr = await compile_cmd.run()  # silent
+        result, _, stderr = await compile_cmd.run_silent()
 
         if result != 0:
             # failed to compile to .o, so report error
@@ -182,7 +196,7 @@ class AutoCompileKernel(BaseKernel):
         # compiled ok, continue to detect main
         self.debug_msg("detect whether main defined")
 
-        result, *_ = await self.command_detect_main(args.obj).run()
+        result, *_ = await self.command_detect_main(args.obj).run_silent()
         if result != 0:
             # main not defined, so repeat to asynchronously report compilation
             # to .o and stop
@@ -195,7 +209,7 @@ class AutoCompileKernel(BaseKernel):
                 args.filename,
                 args.obj,
             )
-            await compile_cmd.run(self.stream_stdout, self.stream_stderr)
+            await compile_cmd.run_with_output(self.stream_stdout, self.stream_stderr)
             return success(self.execution_count)
 
         # main was defined, so compile & link in one command & report, then attempt to execute
@@ -223,16 +237,24 @@ class AutoCompileKernel(BaseKernel):
         )
         self.log_info(f"{compile_exe_cmd}")
 
-        result, *_ = await compile_exe_cmd.run(self.stream_stdout, self.stream_stderr)
+        result, *_ = await compile_exe_cmd.run_with_output(
+            self.stream_stdout, self.stream_stderr
+        )
         if result != 0:
             return error("CompileFailed", "Compilation failed")
         if not args.should_exec:
             return success(self.execution_count)
         run_exe = AsyncCommand(f"./{args.exe} {args.ARGS}", logger=self.log)
         self.print(f"$> {run_exe}")
-        with self.active_command(run_exe) as command:
-            result, *_ = await command.run(
-                self.stream_stdout, self.stream_stderr, self.write_input
+        with (
+            self.active_command(run_exe) as command,
+            self.stdin_trigger.ready() as trigger,
+        ):
+            result, *_ = await command.run_interactive(
+                self.stream_stdout,
+                self.stream_stderr,
+                self.write_input,
+                trigger,
             )
         if result != 0:
             self.print(f"executable failed with exit code {result}", dest=STDERR)

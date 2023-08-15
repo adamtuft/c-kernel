@@ -32,7 +32,7 @@ class AsyncKernel(BaseKernel):  # pylint: disable=too-many-ancestors
         ]
         for command in commands:
             task = AsyncCommand(command)
-            result = await task.run(self.stream_stdout, self.stream_stderr)
+            result = await task.run_with_output(self.stream_stdout, self.stream_stderr)
             if result != 0:
                 self.print(
                     f"command failed with exit code {result}:\n  $> {command}",

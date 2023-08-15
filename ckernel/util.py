@@ -42,15 +42,23 @@ class Trigger:
     """Block until a process signals that it is ready"""
 
     def __init__(
-        self, timeout: Optional[int] = None, logger: Optional[Logger] = None
+        self,
+        prefix: str = "",
+        timeout: Optional[int] = None,
+        logger: Optional[Logger] = None,
     ) -> None:
-        self._name = "/" + str(uuid())
+        self._name = "/" + prefix + str(uuid())
         self.log_info = log_info(logger, self.__class__.__name__)
         self.log_info("%s created", self.name)
         self.timeout = timeout
-        # create the queue eagerly but leave it closed
-        self._mq = PosixMQ(self._name, serializer=RawSerializer)
-        self._mq.close()
+        self._mq: Optional[PosixMQ] = None
+
+    def __repr__(self) -> str:
+        return f"{self.__class__.__name__}(name={self._name}, timeout={self.timeout})"
+
+    @property
+    def is_ready(self):
+        return self._mq is not None
 
     @property
     def name(self) -> str:
@@ -59,24 +67,23 @@ class Trigger:
     def wait(self):
         """Block until ready to trigger"""
         self.log_info("%s wait", self.name)
-        self._mq.get(timeout=self.timeout)
-
-    def start(self):
-        self.log_info("%s start", self.name)
-        # re-open the queue (which was created during __init__)
-        self._mq = PosixMQ(self._name, serializer=RawSerializer)
+        if self._mq is not None:
+            return self._mq.get(timeout=self.timeout)
 
     def stop(self, unlink: bool = True):
         self.log_info("%s stop", self.name)
-        self._mq.close()
-        if unlink:
-            self._mq.unlink()
+        if self._mq is not None:
+            self._mq.close()
+            if unlink:
+                self._mq.unlink()
 
     @contextmanager
     def ready(self, unlink: bool = True):
-        self.start()
-        yield
+        self.log_info("%s start", self.name)
+        self._mq = PosixMQ(self._name, serializer=RawSerializer)
+        yield self
         self.stop(unlink=unlink)
+        self._mq = None
 
 
 class StreamConsumer(Protocol):
@@ -150,26 +157,50 @@ class AsyncCommand:
         self.log_info = log_info(logger, self.__class__.__name__)
         self._command: str = command
         self._proc: Optional[asyncio.subprocess.Process] = None
-        self._stdin_trigger = Trigger(logger=logger)
+        # self._stdin_trigger = Trigger(logger=logger)
+        # self.log_info("created %s", self._stdin_trigger)
 
     def __str__(self) -> str:
         return self._command
 
+    async def run_silent(self):
+        return await self.run(None, None, None, None)
+
+    async def run_with_output(self, stdout: StreamConsumer, stderr: StreamConsumer):
+        return await self.run(stdout, stderr, None, None)
+
+    async def run_interactive(
+        self,
+        stdout: StreamConsumer,
+        stderr: StreamConsumer,
+        stdin: StreamWriter,
+        stdin_trigger: Trigger,
+    ):
+        return await self.run(stdout, stderr, stdin, stdin_trigger)
+
     async def run(
         self: AsyncCommand,
-        stdout: Optional[StreamConsumer] = None,
-        stderr: Optional[StreamConsumer] = None,
-        stdin: Optional[StreamWriter] = None,
+        stdout: Optional[StreamConsumer],
+        stderr: Optional[StreamConsumer],
+        stdin: Optional[StreamWriter],
+        stdin_trigger: Optional[Trigger],
         **kwargs,
     ):
         """run the command, streaming output via stdout and stderr arguments.
         If either is None, return a list[str] for the corresponding stream."""
 
+        if stdin is not None and stdin_trigger is None:
+            raise ValueError("stdin_trigger may not be None when stdin is not None")
+
+        if stdin_trigger is not None and not stdin_trigger.is_ready:
+            raise ValueError("stdin_trigger must be ready")
+
         kwargs["bufsize"] = kwargs.get("bufsize", 0)
         kwargs["env"] = kwargs.get("env", os.environ.copy())
-        env = kwargs["env"]
-        env["CK_MQNAME"] = self._stdin_trigger.name
-        self.log_info("env['CK_MQNAME']=%s", env["CK_MQNAME"])
+        if stdin_trigger is not None:
+            env = kwargs["env"]
+            env["CK_MQNAME"] = stdin_trigger.name
+            self.log_info("env['CK_MQNAME']=%s", env["CK_MQNAME"])
 
         self._proc = await asyncio.create_subprocess_shell(
             self._command,
@@ -184,7 +215,7 @@ class AsyncCommand:
         stdout = stdout or partial(self.gather_data, stdout_lines)
         stderr = stderr or partial(self.gather_data, stderr_lines)
 
-        with self.prepare_stdin(stdin, self._proc.stdin, self._stdin_trigger):
+        with self.prepare_stdin(stdin, self._proc.stdin, stdin_trigger):
             await asyncio.gather(
                 stdout(self._proc.stdout),
                 stderr(self._proc.stderr),
@@ -201,10 +232,10 @@ class AsyncCommand:
         stdin_trigger: Trigger,
     ):
         if stdin is not None:
-            with stdin_trigger.ready(), self._cancelling_task(
-                partial(stdin, proc_stdin, stdin_trigger, prompt="stdin: ")
-            ):
-                yield
+            func = partial(stdin, proc_stdin, stdin_trigger, prompt="stdin: ")
+            task = asyncio.get_running_loop().run_in_executor(None, func)
+            yield
+            task.cancel()
         else:
             yield
 
@@ -213,16 +244,9 @@ class AsyncCommand:
         async for data in reader:
             lines.append(data.decode())
 
-    @staticmethod
-    @contextmanager
-    def _cancelling_task(func: Callable):
-        task = asyncio.get_running_loop().run_in_executor(None, func)
-        yield task
-        task.cancel()
-
     def terminate(self) -> None:
         """Terminate the subprocess"""
         self.log_info("terminate process: %s", self._proc)
         if self._proc is not None:
             self._proc.terminate()
-        self._stdin_trigger.stop()
+        # self._stdin_trigger.stop(unlink=True)
