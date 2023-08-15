@@ -3,16 +3,7 @@
 IPython kernels for teaching and learning C/C++ in a Jupyter notebook, providing
 C/C++ syntax highlighting, automatic compilation and a little more magic.
 
-#### `AsyncKernel`
-
-This kernel (an extension of the default IPython kernel) provides the ability to execute shell commands embedded in comments when the cell contents are saved using the `%%file`
-cell magic:
-
-<p align="center">
-<img src="img/demo-1.png">
-</p>
-
-#### `AutoCompileKernel`
+## `AutoCompileKernel`
 
 Automatically compile cells into object files or executables using the name
 given on the cell's first line:
@@ -32,6 +23,29 @@ Compose simple multi-file projects in a single notebook:
 <p align="center">
 <img src="img/demo-5.png">
 </p>
+
+Interactive text input between notebook and the compiled executable:
+
+<p align="center">
+<img src="img/demo-6.png">
+</p>
+
+### Available options
+
+The following options can be specified in a `//%` magic comment within a code cell:
+
+| Option      | Meaning                                           | Example               |
+| ----------- | ------------------------------------------------- | --------------------- |
+| `CC`        | set the C compiler                                | `CC clang`            |
+| `CXX`       | set the C++ compiler                              | `CXX clang++`         |
+| `CFLAGS`    | add C compilation flags                           | `CFLAGS -Wall`        |
+| `CXXFLAGS`  | add C++ compilation flags                         | `CXXFLAGS -std=c++17` |
+| `LDFLAGS`   | add linker flags                                  | `LDFLAGS -lm`         |
+| `DEPENDS`   | add .o dependencies, separated by spaces          | `DEPENDS mycode.o`    |
+| `VERBOSE`   | extra output from the kernel                      |                       |
+| `ARGS`      | command-line arguments to the executable          | `ARGS arg1 arg2 etc`  |
+| `NOCOMPILE` | save and don't compile the code cell              |                       |
+| `NOEXEC`    | save and compile, but don't execute the code cell |                       |
 
 ## Installation
 
@@ -58,6 +72,10 @@ in Jupyter:
 </p>
 
 See `ckernel install --help` for all options.
+
+## Issues
+
+Please report any issues on [GitHub](https://github.com/adamtuft/c-kernel/issues).
 
 ## License
 
