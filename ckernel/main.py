@@ -68,6 +68,7 @@ def install(
     ).split()
     spec["display_name"] = display_name or kernel
     spec["env"] = {"CKERNEL_CC": c_compiler, "CKERNEL_CXX": cpp_compiler}
+    spec["interrupt_mode"] = "message"
     if debug:
         spec["env"]["CKERNEL_DEBUG"] = "TRUE"
 

@@ -107,3 +107,10 @@ class BaseKernel(IPythonKernel):
     def debug_msg(self, text: str):
         if self.debug:
             self.print(f"[DEBUG] {text}", dest=STDERR)
+
+    def do_interrupt(self):
+        self.log_info("=== I N T E R R U P T ===")
+
+    async def interrupt_request(self, stream, ident, parent):
+        self.do_interrupt()
+        return await super().interrupt_request(stream, ident, parent)

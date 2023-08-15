@@ -21,6 +21,7 @@ from .util import (
     error_from_exception,
     language,
     success,
+    switch_directory,
     temporary_directory,
     Trigger,
 )
@@ -66,7 +67,7 @@ class AutoCompileKernel(BaseKernel):
         self.log_info("using trigger %s", self.stdin_trigger)
 
         # compile input wrappers
-        ck_dyn_src = resource.ckernel_dyn_input_wrappers_src
+        dirname, ck_dyn_src = os.path.split(resource.ckernel_dyn_input_wrappers_src)
         self.ck_dyn_obj = self.twd / "ckernel-input-wrappers.o"
         debug_flag = "-DCKERNEL_WITH_DEBUG" if self.debug else ""
         compile_cmd = AsyncCommand(
@@ -74,9 +75,10 @@ class AutoCompileKernel(BaseKernel):
             logger=self.log,
         )
         self.log_info("%s", compile_cmd)
-        result, _, stderr = asyncio.get_event_loop().run_until_complete(
-            compile_cmd.run_silent()
-        )
+        with switch_directory(dirname):
+            result, _, stderr = asyncio.get_event_loop().run_until_complete(
+                compile_cmd.run_silent()
+            )
         if result != 0:
             self.log_error("failed to compile %s to %s", ck_dyn_src, self.ck_dyn_obj)
             self.log_error("result: %s", result)
@@ -109,6 +111,10 @@ class AutoCompileKernel(BaseKernel):
         self.log_info("unlink trigger %s", self.stdin_trigger)
         self.stdin_trigger.stop(unlink=True)
         return super().do_shutdown(restart)
+
+    def do_interrupt(self):
+        self.log_info("=== I N T E R R U P T ===")
+        self.do_shutdown(restart=True)
 
     @contextmanager
     def active_command(self, command: AsyncCommand):
