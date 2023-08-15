@@ -1,6 +1,6 @@
 """ckernel module __init__.py"""
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 from . import async_kernel, autocompile_kernel, base_kernel, resource
 
