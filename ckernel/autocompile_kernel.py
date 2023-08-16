@@ -17,13 +17,13 @@ from .util import (
     STDERR,
     AsyncCommand,
     Lang,
+    Trigger,
     error,
     error_from_exception,
     language,
     success,
     switch_directory,
     temporary_directory,
-    Trigger,
 )
 
 
@@ -343,7 +343,7 @@ class AutoCompileKernel(BaseKernel):
         depends: str,
         exe: str,
     ) -> AsyncCommand:
-        return AsyncCommand(f"{compiler} {cflags} {ldflags} {depends} {name} -o {exe}")
+        return AsyncCommand(f"{compiler} {cflags} {name} {ldflags} {depends} -o {exe}")
 
     def command_detect_main(self, objfile: str) -> AsyncCommand:
         return AsyncCommand(f"""nm {objfile} | grep " T main" """)
