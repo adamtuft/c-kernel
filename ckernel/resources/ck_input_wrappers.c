@@ -235,12 +235,14 @@ static void ck_request_input(FILE *stream)
 
 int getc(FILE *stream)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stream);
     return ifp.fgetc(stream);
 }
 
 int fgetc(FILE *stream)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stream);
     return ifp.fgetc(stream);
 }
@@ -248,6 +250,7 @@ int fgetc(FILE *stream)
 #if NEED_FN(gets_s)
 char *gets_s(char *str, rsize_t n)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stdin);
     return ifp.gets_s(str, n);
 }
@@ -256,6 +259,7 @@ char *gets_s(char *str, rsize_t n)
 #if NEED_FN(gets)
 char *gets(char *str)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stdin);
     return ifp.gets(str);
 }
@@ -263,18 +267,21 @@ char *gets(char *str)
 
 char *fgets(char *s, int size, FILE *stream)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stream);
     return ifp.fgets(s, size, stream);
 }
 
 int getchar(void)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stdin);
     return ifp.getchar();
 }
 
 int scanf(const char *format, ...)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stdin);
     va_list args;
     va_start(args, format);
@@ -285,6 +292,7 @@ int scanf(const char *format, ...)
 
 int fscanf(FILE *stream, const char *format, ...)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stream);
     va_list args;
     va_start(args, format);
@@ -295,12 +303,14 @@ int fscanf(FILE *stream, const char *format, ...)
 
 int vscanf(const char *format, va_list args)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stdin);
     return ifp.vfscanf(stdin, format, args);
 }
 
 int vfscanf(FILE *stream, const char *format, va_list args)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stream);
     return ifp.vfscanf(stream, format, args);
 }
@@ -308,6 +318,7 @@ int vfscanf(FILE *stream, const char *format, va_list args)
 #if USE_C11 && USE_BOUNDS_CHECKING
 int scanf_s(const char *format, ...)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stdin);
     va_list args;
     va_start(args, format);
@@ -318,6 +329,7 @@ int scanf_s(const char *format, ...)
 
 int fscanf_s(FILE *restrict stream, const char *restrict format, ...)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stream);
     va_list args;
     va_start(args, format);
@@ -328,12 +340,14 @@ int fscanf_s(FILE *restrict stream, const char *restrict format, ...)
 
 int vscanf_s(const char *format, va_list args)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stdin);
     return ifp.vfscanf_s(stdin, format, args);
 }
 
 int vfscanf_s(FILE *stream, const char *format, va_list args)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stream);
     return ifp.vfscanf_s(stream, format, args);
 }
@@ -342,12 +356,14 @@ int vfscanf_s(FILE *stream, const char *format, va_list args)
 #if NEED_FN(getdelim)
 ssize_t getline(char **lineptr, size_t *n, FILE *stream)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stream);
     return ifp.getdelim(lineptr, n, '\n', stream);
 }
 
 ssize_t getdelim(char **lineptr, size_t *n, int delimiter, FILE *stream)
 {
+    CKDEBUG("requesting input");
     ck_request_input(stream);
     return ifp.getdelim(lineptr, n, delimiter, stream);
 }

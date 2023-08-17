@@ -99,6 +99,8 @@ class AutoCompileKernel(BaseKernel):
         """Process a restart/shutdown request"""
         if restart:
             self.log_info("====== R E S T A R T ======")
+        else:
+            self.log_info("XXXXX S H U T D O W N XXXXX")
         for command in self._active_commands:
             self.log_info("kill %s", command)
             command.terminate()
@@ -126,10 +128,6 @@ class AutoCompileKernel(BaseKernel):
         except KeyError:
             self.log_info("active command not found: %s", command)
 
-    # @contextmanager
-    # def active_trigger(self, trigger: Trigger):
-    #     ...
-
     async def autocompile(
         self,
         code: str,
@@ -146,7 +144,7 @@ class AutoCompileKernel(BaseKernel):
         # Scan for magics
         if (
             len(code.splitlines()) == 1
-            and code.startswith("%")
+            and (code.startswith("%") or code.startswith("!"))
             or code.startswith("%%")
         ):
             self.debug_msg("executing magic command")

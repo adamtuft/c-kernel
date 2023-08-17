@@ -89,6 +89,9 @@ class BaseKernel(IPythonKernel):
     ):
         """Get input and send to writer. Wait for input request from trigger"""
         while True:
+            if not trigger.is_ready:
+                self.log_info("trigger not ready, stop waiting for input")
+                break
             self.log_info("waiting for input on %s", trigger)
             msg = trigger.wait()
             self.log_info("got message: %s", msg)

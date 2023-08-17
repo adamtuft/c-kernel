@@ -62,7 +62,7 @@ class Trigger:
         self._mq: Optional[PosixMQ] = None
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(name={self._name}, timeout={self.timeout})"
+        return f"{self.__class__.__name__}(name={self._name}, timeout={self.timeout}, ready={self.is_ready})"
 
     @property
     def is_ready(self):
@@ -75,12 +75,14 @@ class Trigger:
     def wait(self):
         """Block until ready to trigger"""
         self.log_info("%s wait", self.name)
-        if self._mq is not None:
+        if self.is_ready:
             return self._mq.get(timeout=self.timeout)
+        else:
+            raise RuntimeError("can't wait on unready trigger")
 
     def stop(self, unlink: bool = True):
-        self.log_info("%s stop", self.name)
         if self._mq is not None:
+            self.log_info("%s stop", self.name)
             self._mq.close()
             if unlink:
                 self._mq.unlink()
