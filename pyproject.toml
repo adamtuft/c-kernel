@@ -7,7 +7,7 @@ requires-python = ">=3.8"
 name = "ckernel"
 description = "IPython kernels for teaching and learning C/C++ in a Jupyter notebook, providing C/C++ syntax highlighting and a little more magic."
 readme = "README.md"
-version = "0.3.0"
+version = "0.3.1"
 authors = [{ name = "Adam Tuft" }]
 dependencies = ["ipcqueue", "ipykernel", "jupyter_client", "colorama"]
 license = { file = "LICENSE" }
