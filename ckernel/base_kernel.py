@@ -9,6 +9,7 @@ from typing import Coroutine
 
 from ipykernel.ipkernel import IPythonKernel
 
+import ckernel
 from .util import STDERR, STDOUT, Stream, Trigger
 
 
@@ -34,6 +35,9 @@ class BaseKernel(IPythonKernel):
             handler.setLevel(logging.INFO)
             self.log.info("update handler level: %s is now %s", current, handler)
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}(debug={self.debug})"
+
     @property
     def cwd(self):
         return Path(os.getcwd())
@@ -52,6 +56,10 @@ class BaseKernel(IPythonKernel):
     def banner(self):
         return "\n".join(
             [
+                f"ckernel {ckernel.__version__}",
+                "",
+                f"{self}",
+                "",
                 "A basic Jupyter kernel which provides C/C++ syntax highlighting",
                 "and a little more magic",
                 "",

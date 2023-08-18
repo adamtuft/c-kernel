@@ -85,6 +85,9 @@ class AutoCompileKernel(BaseKernel):
             for line in stderr:
                 self.log_error(line.rstrip())
 
+    def __repr__(self):
+        return f"{self.__class__.__name__}(CC={self.CC}, CXX={self.CXX}, debug={self.debug})"
+
     async def do_execute(self, *args, **kwargs):
         """Catch all exceptions and report them in the notebook"""
         result = None
