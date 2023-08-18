@@ -250,10 +250,9 @@ class AutoCompileKernel(BaseKernel):
             return success(self.execution_count)
         run_exe = AsyncCommand(f"./{args.exe} {args.ARGS}", logger=self.log)
         self.print(f"$> {run_exe}")
-        with (
-            self.active_command(run_exe) as command,
-            self.stdin_trigger.ready() as trigger,
-        ):
+        with self.active_command(
+            run_exe
+        ) as command, self.stdin_trigger.ready() as trigger:
             result, *_ = await command.run_interactive(
                 self.stream_stdout,
                 self.stream_stderr,
@@ -270,7 +269,9 @@ class AutoCompileKernel(BaseKernel):
         header, *lines = code.splitlines()
         self.debug_msg(f"{header=}")
         assert header.startswith(self._tag_name)
-        args.filename = header.removeprefix(self._tag_name).strip()
+        if header.startswith(self._tag_name):
+            header = header[len(self._tag_name) :]
+        args.filename = header.strip()
         self.debug_msg(f"{args.filename=}")
 
         # Detect language used
@@ -288,7 +289,9 @@ class AutoCompileKernel(BaseKernel):
             if line.startswith(self._tag_opt) and len(line.rstrip()) > len(
                 self._tag_opt
             ):
-                opt, _, rest = line.removeprefix(self._tag_opt).strip().partition(" ")
+                if line.startswith(self._tag_opt):
+                    line = line[len(self._tag_opt) :]
+                opt, _, rest = line.strip().partition(" ")
                 self.debug_msg(f"{opt=}, {rest=}")
                 if opt not in self._known_opts:
                     self.print(f"unknown option on line {k}: {opt}", STDERR)

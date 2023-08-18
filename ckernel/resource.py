@@ -1,16 +1,14 @@
-from os import path
+import os
+
+# importlib.resources available from 3.7
+from importlib.resources import path, contents
 
 import ckernel.resources
 
-try:
-    import importlib.resources as resources
-except ImportError:
-    import importlib_resources as resources
-
-_all = {
-    path.basename(item): item
-    for item in map(str, resources.files(ckernel.resources).iterdir())
-}
+_all = {}
+for name in contents(ckernel.resources):
+    with path(ckernel.resources, name) as fullpath:
+        _all[os.path.basename(fullpath)] = fullpath
 
 
 def get(key: str, default=None):
