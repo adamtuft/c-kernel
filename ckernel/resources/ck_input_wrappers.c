@@ -88,7 +88,7 @@ static void ck_describe_mq_file(const char *name)
     FILE *mq_file = NULL;
     if ((mq_file = fopen(mq_path, "rb")) == NULL)
     {
-        CKERROR("failed to open message queue at %s", errno, strerror(errno), mq_path);
+        CKDEBUG("[Error %d: %s] failed to open message queue at %s", errno, strerror(errno), mq_path);
         return;
     }
     struct stat mq_stat;
@@ -109,7 +109,7 @@ static void ck_describe_mq_file(const char *name)
         file_type = "FIFO/pipe";
         break;
     case S_IFLNK:
-        CKDEBUG("symlink");
+        file_type = "symlink";
         break;
     case S_IFREG:
         file_type = "regular file"; // i.e. redirected from file
@@ -157,7 +157,7 @@ static void __attribute__((constructor)) ck_setup(void)
         file_type = "FIFO/pipe";
         break;
     case S_IFLNK:
-        CKDEBUG("symlink");
+        file_type = "symlink";
         break;
     case S_IFREG:
         file_type = "regular file"; // i.e. redirected from file
@@ -209,10 +209,16 @@ static void __attribute__((constructor)) ck_setup(void)
     ATTACH_FP(ifp, getdelim);
 #endif
 
-    // attempt to connect to message queue
+    // get the specified message queue from the environment
     const char *mq_name = NULL;
     if ((mq_name = getenv("CK_MQNAME")) == NULL)
-        mq_name = "NONE";
+    {
+        CKDEBUG("environment variable %s not set, no message queue specified", "CK_MQNAME");
+        request_input = false;
+        return;
+    }
+
+    // attempt to connect to message queue
     ck_describe_mq_file(mq_name);
     CKDEBUG("connect to queue %s", mq_name);
     if ((stdin_mq = mq_open(mq_name, O_WRONLY)) == -1)
