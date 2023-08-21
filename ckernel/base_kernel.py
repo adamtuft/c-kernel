@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import json
 import os
 from pathlib import Path
 from typing import Coroutine
@@ -34,6 +35,12 @@ class BaseKernel(IPythonKernel):
             current = str(handler)
             handler.setLevel(logging.INFO)
             self.log.info("update handler level: %s is now %s", current, handler)
+
+        kernel_info_lines = json.dumps(self.kernel_info, indent=2).split("\n")
+        self.log.info("++ kernel info:")
+        for line in kernel_info_lines:
+            self.log_info("++ %s", line)
+        self.log_info("++++++++")
 
     def __repr__(self):
         return f"{self.__class__.__name__}(debug={self.debug})"

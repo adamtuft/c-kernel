@@ -46,16 +46,17 @@ class AutoCompileKernel(BaseKernel):
     ]
 
     def __init__(self, *args, **kwargs):
+        # get default compilers from the environment
+        # set these here so they are available in self.__repr__ for kernel_info
+        self.CC = os.getenv("CKERNEL_CC")
+        self.CXX = os.getenv("CKERNEL_CXX")
+
         super().__init__(*args, **kwargs)
 
         # request a temporary working dir for this session
         self.twd = temporary_directory(prefix="ipython-ckernel-")
         self.log_info("cwd: %s", self.cwd)
         self.log_info("twd: %s", self.twd)
-
-        # get default compilers from the environment
-        self.CC = os.getenv("CKERNEL_CC")
-        self.CXX = os.getenv("CKERNEL_CXX")
 
         # store active command(s) for safe termination
         self._active_commands: set[AsyncCommand] = set()
@@ -86,7 +87,10 @@ class AutoCompileKernel(BaseKernel):
                 self.log_error(line.rstrip())
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(CC={self.CC}, CXX={self.CXX}, debug={self.debug})"
+        args = ", ".join(
+            [f"{name}={getattr(self, name, '?')}" for name in ["CC", "CXX", "debug"]]
+        )
+        return f"{self.__class__.__name__}({args})"
 
     async def do_execute(self, *args, **kwargs):
         """Catch all exceptions and report them in the notebook"""
