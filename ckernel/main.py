@@ -73,9 +73,6 @@ def install(
         env={
             "CKERNEL_CC": c_compiler,
             "CKERNEL_CXX": cpp_compiler,
-            # "CKERNEL_EXE_CFLAGS": "",
-            # "CKERNEL_EXE_CXXFLAGS": "",
-            # "CKERNEL_EXE_LDFLAGS": "",
         },
         interrupt_mode="message",
     )
