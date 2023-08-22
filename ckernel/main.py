@@ -1,20 +1,37 @@
 """Install and launch kernels"""
 
+from __future__ import annotations
+
 import argparse
 import contextlib
 import json
+import os
 import pathlib
+import shlex
 import shutil
 import sys
 import tempfile
 import typing
 from enum import Enum
+from typing import Dict, List, TypedDict
 
 import colorama
 import jupyter_client
 from ipykernel.kernelapp import IPKernelApp
 
 import ckernel
+
+KernelSpec = TypedDict(
+    "KernelSpec",
+    {
+        "argv": List[str],
+        "display_name": str,
+        "env": Dict[str, str],
+        "interrupt_mode": str,
+    },
+)
+
+InstallResult = TypedDict("InstallResult", {"dest": str, "spec": KernelSpec})
 
 
 class Command(Enum):
@@ -43,32 +60,18 @@ def install(
     c_compiler: str,
     cpp_compiler: str,
     debug: bool,
-) -> None:
+) -> InstallResult:
     """Install a specific kernel"""
-
-    for prog in [c_compiler, cpp_compiler]:
-        location = shutil.which(prog)
-        if location is None:
-            print(
-                colorama.Fore.RED
-                + f"WARNING: {prog} not found in your PATH. "
-                + "Please ensure it's available before using this kernel."
-                + colorama.Style.RESET_ALL,
-                file=sys.stderr,
-            )
-        else:
-            print(f"found {prog}: {location}")
 
     ksm = jupyter_client.kernelspec.KernelSpecManager()
 
     # The kernel spec to serialise in "kernel.json"
-    spec = dict()
-    spec["argv"] = (
-        f"python3 -m ckernel run {kernel}" + " -f {connection_file}"
-    ).split()
-    spec["display_name"] = display_name or kernel
-    spec["env"] = {"CKERNEL_CC": c_compiler, "CKERNEL_CXX": cpp_compiler}
-    spec["interrupt_mode"] = "message"
+    spec = KernelSpec(
+        argv=shlex.split(f"python3 -m ckernel run {kernel}" + " -f {connection_file}"),
+        display_name=display_name or kernel,
+        env={"CKERNEL_CC": c_compiler, "CKERNEL_CXX": cpp_compiler},
+        interrupt_mode="message",
+    )
     if debug:
         spec["env"]["CKERNEL_DEBUG"] = "TRUE"
 
@@ -88,7 +91,42 @@ def install(
         print("Kernel installation failed, trying again with --user")
         install_args["user"] = True
         dest = ksm.install_kernel_spec(str(specdir), **install_args)
-    print(f'installed {kernel} as {name} (display name "{display_name}") at {dest}')
+    dest = str(dest)
+
+    for prog in [c_compiler, cpp_compiler]:
+        if shutil.which(prog) is None:
+            print(
+                colorama.Fore.RED
+                + f"WARNING: {prog} not found in your PATH. "
+                + "Please ensure it's available before using this kernel."
+                + colorama.Style.RESET_ALL,
+                file=sys.stderr,
+            )
+
+    return InstallResult(dest=dest, spec=spec)
+
+
+def install_startup_script(kernel: str, installdir: str, spec: KernelSpec, script: str):
+    _kernel_start = f"""#! /usr/bin/env -S bash -l
+
+if [ -e "{script}" ]; then
+    source "{script}"
+fi
+
+python3 -m ckernel run {kernel} -f "${1}"
+"""
+
+    startup_script_path = os.path.abspath(pathlib.Path(installdir) / "kernel.sh")
+    with open(startup_script_path, "w", encoding="utf-8") as startup_script:
+        startup_script.write(_kernel_start)
+    os.chmod(startup_script_path, 0o744)
+
+    spec["argv"] = shlex.split(f"{startup_script_path} {{connection_file}}")
+
+    with open(
+        pathlib.Path(installdir) / "kernel.json", "w", encoding="utf-8"
+    ) as specfile:
+        json.dump(spec, specfile, indent=4)
 
 
 def show(name: str):
@@ -156,6 +194,11 @@ def main(prog: typing.Optional[str] = None) -> None:
         action="store_true",
         help="kernel reports debug messages to notebook user",
     )
+    parse_install.add_argument(
+        "--startup",
+        metavar="script",
+        help="a startup script to be sourced before launching the kernel",
+    )
 
     # Parse the run subcommand
     parse_run = command_action.add_parser(
@@ -199,7 +242,7 @@ def main(prog: typing.Optional[str] = None) -> None:
     args.command = Command(args.command)
     if args.command == Command.INSTALL:
         with tempdir() as specdir:
-            install(
+            installed = install(
                 specdir,
                 args.kernel,
                 args.name,
@@ -209,6 +252,13 @@ def main(prog: typing.Optional[str] = None) -> None:
                 args.cc,
                 args.cxx,
                 args.debug,
+            )
+            print(
+                f'installed {args.kernel} as {args.name} (display name "{args.display_name}") at {installed["dest"]}'
+            )
+        if args.startup:
+            install_startup_script(
+                args.kernel, installed["dest"], installed["spec"], args.startup
             )
     elif args.command == Command.RUN:
         IPKernelApp.launch_instance(kernel_class=ckernel.get_cls(args.kernel))
