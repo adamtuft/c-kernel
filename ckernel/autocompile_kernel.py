@@ -240,8 +240,8 @@ class AutoCompileKernel(BaseKernel):
         # now add self.ck_dyn_obj to args.depends to add input wrappers
         compile_exe_cmd = self.command_compile_exe(
             args.compiler,
-            args.cflags + " -Wl,--no-as-needed",
-            args.LDFLAGS + " -ldl -lrt",
+            args.cflags,
+            args.LDFLAGS,
             args.filename,
             f"{self.ck_dyn_obj} " + args.depends,
             args.exe,
