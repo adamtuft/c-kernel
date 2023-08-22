@@ -39,8 +39,8 @@ class BaseKernel(IPythonKernel):
         kernel_info_lines = json.dumps(self.kernel_info, indent=2).split("\n")
         self.log.info("++ kernel info:")
         for line in kernel_info_lines:
-            self.log_info("++ %s", line)
-        self.log_info("++++++++")
+            self.log.info("++ %s", line)
+        self.log.info("++++++++")
 
     def __repr__(self):
         return f"{self.__class__.__name__}(debug={self.debug})"
