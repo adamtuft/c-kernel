@@ -106,19 +106,19 @@ def install(
     return InstallResult(dest=dest, spec=spec)
 
 
-def install_startup_script(kernel: str, installdir: str, spec: KernelSpec, script: str):
-    _kernel_start = f"""#! /usr/bin/env -S bash -l
-
-if [ -e "{script}" ]; then
-    source "{script}"
-fi
-
-python3 -m ckernel run {kernel} -f "${1}"
-"""
+def install_startup_script(
+    kernel: str, name: str, installdir: str, spec: KernelSpec, script: str
+):
+    kernel_start_path = ckernel.resource.get("kernel.sh")
+    with open(kernel_start_path, "r", encoding="utf-8") as kernel_start_file:
+        kernel_start = "".join(kernel_start_file.readlines())
+        kernel_start = kernel_start.format(
+            kernel=kernel, name=name, installdir=installdir, script=script
+        )
 
     startup_script_path = os.path.abspath(pathlib.Path(installdir) / "kernel.sh")
     with open(startup_script_path, "w", encoding="utf-8") as startup_script:
-        startup_script.write(_kernel_start)
+        startup_script.write(kernel_start)
     os.chmod(startup_script_path, 0o744)
 
     spec["argv"] = shlex.split(f"{startup_script_path} {{connection_file}}")
@@ -258,7 +258,11 @@ def main(prog: typing.Optional[str] = None) -> None:
             )
         if args.startup:
             install_startup_script(
-                args.kernel, installed["dest"], installed["spec"], args.startup
+                args.kernel,
+                args.name,
+                installed["dest"],
+                installed["spec"],
+                args.startup,
             )
     elif args.command == Command.RUN:
         IPKernelApp.launch_instance(kernel_class=ckernel.get_cls(args.kernel))

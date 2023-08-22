@@ -1,1 +1,2 @@
 include ckernel/resources/ck_input_wrappers.c
+include ckernel/resources/kernel.sh
