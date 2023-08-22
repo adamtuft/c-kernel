@@ -16,6 +16,7 @@ from .base_kernel import BaseKernel
 from .util import (
     STDERR,
     AsyncCommand,
+    ExtraFlags,
     Lang,
     Trigger,
     error,
@@ -50,6 +51,15 @@ class AutoCompileKernel(BaseKernel):
         # set these here so they are available in self.__repr__ for kernel_info
         self.CC = os.getenv("CKERNEL_CC")
         self.CXX = os.getenv("CKERNEL_CXX")
+
+        # get any additional flags needed when compiling/linking an executable
+        # this is where we can inject things like -Wl,--no-as-needed on a
+        # per-installation basis
+        self.extra_flags = ExtraFlags(
+            EXE_CFLAGS=os.getenv("CKERNEL_EXE_CFLAGS", ""),
+            EXE_CXXFLAGS=os.getenv("CKERNEL_EXE_CXXFLAGS", ""),
+            EXE_LDFLAGS=os.getenv("CKERNEL_EXE_LDFLAGS", ""),
+        )
 
         super().__init__(*args, **kwargs)
 
@@ -226,11 +236,18 @@ class AutoCompileKernel(BaseKernel):
         # main was defined, so compile & link in one command & report, then attempt to execute
         self.debug_msg("main was defined: attempt to compile and run executable")
 
+        if args.language == Lang.C:
+            extra_cflags = self.extra_flags["EXE_CFLAGS"]
+        elif args.language == Lang.CPP:
+            extra_cflags = self.extra_flags["EXE_CXXFLAGS"]
+        else:
+            extra_cflags = ""
+
         # report to the user the compilation command *without* the input wrappers
         compile_exe_cmd = self.command_compile_exe(
             args.compiler,
-            args.cflags,
-            args.LDFLAGS,
+            extra_cflags + " " + args.cflags,
+            self.extra_flags["EXE_LDFLAGS"] + " " + args.LDFLAGS,
             args.filename,
             args.depends,
             args.exe,
@@ -240,8 +257,8 @@ class AutoCompileKernel(BaseKernel):
         # now add self.ck_dyn_obj to args.depends to add input wrappers
         compile_exe_cmd = self.command_compile_exe(
             args.compiler,
-            args.cflags,
-            args.LDFLAGS,
+            extra_cflags + " " + args.cflags,
+            self.extra_flags["EXE_LDFLAGS"] + " " + args.LDFLAGS,
             args.filename,
             f"{self.ck_dyn_obj} " + args.depends,
             args.exe,

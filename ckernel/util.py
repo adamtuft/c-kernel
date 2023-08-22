@@ -10,7 +10,7 @@ from functools import partial
 from logging import Logger
 from pathlib import Path
 from tempfile import mkdtemp
-from typing import Coroutine, NoReturn, Optional, Protocol
+from typing import Coroutine, NoReturn, Optional, Protocol, TypedDict
 from uuid import uuid1 as uuid
 
 from ipcqueue.posixmq import Queue as PosixMQ
@@ -20,6 +20,16 @@ from ipcqueue.serializers import RawSerializer
 def temporary_directory(prefix: Optional[str] = None):
     "Return a temporary directory"
     return Path(mkdtemp(prefix=prefix))
+
+
+ExtraFlags = TypedDict(
+    "ExtraFlags",
+    {
+        "EXE_CFLAGS": str,
+        "EXE_CXXFLAGS": str,
+        "EXE_LDFLAGS": str,
+    },
+)
 
 
 @contextmanager

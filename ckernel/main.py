@@ -13,7 +13,7 @@ import sys
 import tempfile
 import typing
 from enum import Enum
-from typing import Dict, List, TypedDict
+from typing import Dict, List, TypedDict, Optional
 
 import colorama
 import jupyter_client
@@ -60,6 +60,7 @@ def install(
     c_compiler: str,
     cpp_compiler: str,
     debug: bool,
+    env: Optional[Dict[str, str]] = None,
 ) -> InstallResult:
     """Install a specific kernel"""
 
@@ -69,11 +70,20 @@ def install(
     spec = KernelSpec(
         argv=shlex.split(f"python3 -m ckernel run {kernel}" + " -f {connection_file}"),
         display_name=display_name or kernel,
-        env={"CKERNEL_CC": c_compiler, "CKERNEL_CXX": cpp_compiler},
+        env={
+            "CKERNEL_CC": c_compiler,
+            "CKERNEL_CXX": cpp_compiler,
+            # "CKERNEL_EXE_CFLAGS": "",
+            # "CKERNEL_EXE_CXXFLAGS": "",
+            # "CKERNEL_EXE_LDFLAGS": "",
+        },
         interrupt_mode="message",
     )
     if debug:
         spec["env"]["CKERNEL_DEBUG"] = "TRUE"
+
+    if env:
+        spec["env"].update(env)
 
     with open(specdir / pathlib.Path("kernel.json"), "w", encoding="utf-8") as specfile:
         json.dump(spec, specfile, indent=4)
@@ -184,6 +194,24 @@ def main(prog: typing.Optional[str] = None) -> None:
         default="g++",
     )
     parse_install.add_argument(
+        "--exe-cflags",
+        help="CFLAGS to pass when compiling/linking executables",
+        dest="exe_cflags",
+        metavar="CFLAGS",
+    )
+    parse_install.add_argument(
+        "--exe-cxxflags",
+        help="CXXFLAGS to pass when compiling/linking executables",
+        dest="exe_cxxflags",
+        metavar="CXXFLAGS",
+    )
+    parse_install.add_argument(
+        "--exe-ldflags",
+        help="LDFLAGS to pass when compiling/linking executables",
+        dest="exe_ldflags",
+        metavar="LDFLAGS",
+    )
+    parse_install.add_argument(
         "--user", action="store_true", help="install per-user only"
     )
     parse_install.add_argument(
@@ -241,6 +269,13 @@ def main(prog: typing.Optional[str] = None) -> None:
 
     args.command = Command(args.command)
     if args.command == Command.INSTALL:
+        env = {}
+        if args.exe_cflags:
+            env["CKERNEL_EXE_CFLAGS"] = args.exe_cflags
+        if args.exe_cxxflags:
+            env["CKERNEL_EXE_CXXFLAGS"] = args.exe_cxxflags
+        if args.exe_ldflags:
+            env["CKERNEL_EXE_LDFLAGS"] = args.exe_ldflags
         with tempdir() as specdir:
             installed = install(
                 specdir,
@@ -252,6 +287,7 @@ def main(prog: typing.Optional[str] = None) -> None:
                 args.cc,
                 args.cxx,
                 args.debug,
+                env=env,
             )
             print(
                 f'installed {args.kernel} as {args.name} (display name "{args.display_name}") at {installed["dest"]}'
