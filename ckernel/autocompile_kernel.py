@@ -16,11 +16,11 @@ from .base_kernel import BaseKernel
 from .util import (
     STDERR,
     AsyncCommand,
-    ExtraFlags,
     Lang,
     Trigger,
     error,
     error_from_exception,
+    get_environment_variables,
     language,
     success,
     switch_directory,
@@ -47,20 +47,7 @@ class AutoCompileKernel(BaseKernel):
     ]
 
     def __init__(self, *args, **kwargs):
-        # get default compilers from the environment
-        # set these here so they are available in self.__repr__ for kernel_info
-        self.CC = os.getenv("CKERNEL_CC")
-        self.CXX = os.getenv("CKERNEL_CXX")
-
-        # get any additional flags needed when compiling/linking an executable
-        # this is where we can inject things like -Wl,--no-as-needed on a
-        # per-installation basis
-        self.extra_flags = ExtraFlags(
-            EXE_CFLAGS=os.getenv("CKERNEL_EXE_CFLAGS", ""),
-            EXE_CXXFLAGS=os.getenv("CKERNEL_EXE_CXXFLAGS", ""),
-            EXE_LDFLAGS=os.getenv("CKERNEL_EXE_LDFLAGS", ""),
-        )
-
+        self.env = get_environment_variables(default="")
         super().__init__(*args, **kwargs)
 
         # request a temporary working dir for this session
@@ -82,7 +69,7 @@ class AutoCompileKernel(BaseKernel):
         self.ck_dyn_obj = self.twd / "ckernel-input-wrappers.o"
         debug_flag = "-DCKERNEL_WITH_DEBUG" if self.debug else ""
         compile_cmd = AsyncCommand(
-            f"{self.CC} {debug_flag} -c {ck_dyn_src} -o {self.ck_dyn_obj}",
+            f"{self.env.CKERNEL_CC} {debug_flag} -c {ck_dyn_src} -o {self.ck_dyn_obj}",
             logger=self.log,
         )
         self.log_info("%s", compile_cmd)
@@ -97,10 +84,7 @@ class AutoCompileKernel(BaseKernel):
                 self.log_error(line.rstrip())
 
     def __repr__(self):
-        args = ", ".join(
-            [f"{name}={getattr(self, name, '?')}" for name in ["CC", "CXX", "debug"]]
-        )
-        return f"{self.__class__.__name__}({args})"
+        return f"{self.__class__.__name__}"
 
     async def do_execute(self, *args, **kwargs):
         """Catch all exceptions and report them in the notebook"""
@@ -237,9 +221,9 @@ class AutoCompileKernel(BaseKernel):
         self.debug_msg("main was defined: attempt to compile and run executable")
 
         if args.language == Lang.C:
-            extra_cflags = self.extra_flags["EXE_CFLAGS"]
+            extra_cflags = self.env.CKERNEL_EXE_CFLAGS or ""
         elif args.language == Lang.CPP:
-            extra_cflags = self.extra_flags["EXE_CXXFLAGS"]
+            extra_cflags = self.env.CKERNEL_EXE_CXXFLAGS or ""
         else:
             extra_cflags = ""
 
@@ -247,7 +231,7 @@ class AutoCompileKernel(BaseKernel):
         compile_exe_cmd = self.command_compile_exe(
             args.compiler,
             extra_cflags + " " + args.cflags,
-            self.extra_flags["EXE_LDFLAGS"] + " " + args.LDFLAGS,
+            (self.env.CKERNEL_EXE_LDFLAGS or "") + " " + args.LDFLAGS,
             args.filename,
             args.depends,
             args.exe,
@@ -258,7 +242,7 @@ class AutoCompileKernel(BaseKernel):
         compile_exe_cmd = self.command_compile_exe(
             args.compiler,
             extra_cflags + " " + args.cflags,
-            self.extra_flags["EXE_LDFLAGS"] + " " + args.LDFLAGS,
+            (self.env.CKERNEL_EXE_LDFLAGS or "") + " " + args.LDFLAGS,
             args.filename,
             f"{self.ck_dyn_obj} " + args.depends,
             args.exe,
@@ -332,9 +316,9 @@ class AutoCompileKernel(BaseKernel):
         if args.language is None:
             args.compiler = None
         elif args.language == Lang.C:
-            args.compiler = args.CC or self.CC
+            args.compiler = args.CC or self.env.CKERNEL_CC
         elif args.language == Lang.CPP:
-            args.compiler = args.CXX or self.CXX
+            args.compiler = args.CXX or self.env.CKERNEL_CXX
         else:
             raise ValueError(f"don't know which compiler for extension {ext}")
 
@@ -385,3 +369,10 @@ class AutoCompileKernel(BaseKernel):
         args = Namespace(**{opt: "" for opt in (cls._known_opts + extra)})
         args.verbose = False
         return args
+
+    @property
+    def banner(self) -> str:
+        extra = "\n\nEnvironment variables:\n"
+        for name, value in self.env._asdict().items():
+            extra = extra + f"\n{name}: {value}"
+        return super().banner + extra

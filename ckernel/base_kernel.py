@@ -2,8 +2,8 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Coroutine
@@ -11,6 +11,7 @@ from typing import Coroutine
 from ipykernel.ipkernel import IPythonKernel
 
 import ckernel
+
 from .util import STDERR, STDOUT, Stream, Trigger
 
 

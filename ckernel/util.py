@@ -10,7 +10,7 @@ from functools import partial
 from logging import Logger
 from pathlib import Path
 from tempfile import mkdtemp
-from typing import Coroutine, NoReturn, Optional, Protocol, TypedDict
+from typing import Coroutine, NamedTuple, NoReturn, Optional, Protocol
 from uuid import uuid1 as uuid
 
 from ipcqueue.posixmq import Queue as PosixMQ
@@ -22,14 +22,19 @@ def temporary_directory(prefix: Optional[str] = None):
     return Path(mkdtemp(prefix=prefix))
 
 
-ExtraFlags = TypedDict(
-    "ExtraFlags",
-    {
-        "EXE_CFLAGS": str,
-        "EXE_CXXFLAGS": str,
-        "EXE_LDFLAGS": str,
-    },
-)
+class EnvironmentVariables(NamedTuple):
+    CKERNEL_DEBUG: Optional[str]
+    CKERNEL_CC: Optional[str]
+    CKERNEL_CXX: Optional[str]
+    CKERNEL_EXE_CFLAGS: Optional[str]
+    CKERNEL_EXE_CXXFLAGS: Optional[str]
+    CKERNEL_EXE_LDFLAGS: Optional[str]
+
+
+def get_environment_variables(default: Optional[str] = None) -> EnvironmentVariables:
+    return EnvironmentVariables(
+        **{name: os.getenv(name, default) for name in EnvironmentVariables._fields}
+    )
 
 
 @contextmanager
@@ -169,8 +174,6 @@ def error_from_exception(exc_type, exc, tb):
 
 class AsyncCommand:
     """Run an async command, streaming its stdout and stderr as directed."""
-
-    # TODO: add option to return stdout & stderr instead of streaming somewhere
 
     def __init__(self, command: str, logger: Optional[Logger] = None) -> None:
         self.log_info = log_info(logger, self.__class__.__name__)
