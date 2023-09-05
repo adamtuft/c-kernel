@@ -1,3 +1,9 @@
+/**
+ * `#define _GNU_SOURCE` required for RTLD_NEXT. Note that this affects how the
+ * scanf-family's names are #defined, so any user code requiring input should
+ * also define _GNU_SOURCE
+ *
+ */
 #define _GNU_SOURCE
 
 #include <dlfcn.h> // for dlsym
@@ -287,12 +293,29 @@ int getchar(void) {
   return ifp.getchar();
 }
 
+/**
+ * @brief A wrapper around ifp.vfscanf which gets input and then, if stream is
+ * stdin, eats input until the next '\n' or EOF.
+ */
+int vfscanf_and_eat_newline(FILE *stream, const char *format, va_list args) {
+  int result = ifp.vfscanf(stdin, format, args);
+  if (stream == stdin) {
+    CKDEBUG("consuming stdin until newline removed or EOF");
+    int c = EOF;
+    do {
+      c = ifp.fgetc(stream);
+    } while ((c != '\n') && (c != EOF));
+    CKDEBUG("finished consuming stdin");
+  }
+  return result;
+}
+
 int scanf(const char *format, ...) {
   CKDEBUG("requesting input");
   ck_request_input(stdin);
   va_list args;
   va_start(args, format);
-  int result = ifp.vfscanf(stdin, format, args);
+  int result = vfscanf_and_eat_newline(stdin, format, args);
   va_end(args);
   return result;
 }
@@ -302,7 +325,7 @@ int fscanf(FILE *stream, const char *format, ...) {
   ck_request_input(stream);
   va_list args;
   va_start(args, format);
-  int result = ifp.vfscanf(stream, format, args);
+  int result = vfscanf_and_eat_newline(stream, format, args);
   va_end(args);
   return result;
 }
@@ -310,13 +333,13 @@ int fscanf(FILE *stream, const char *format, ...) {
 int vscanf(const char *format, va_list args) {
   CKDEBUG("requesting input");
   ck_request_input(stdin);
-  return ifp.vfscanf(stdin, format, args);
+  return vfscanf_and_eat_newline(stdin, format, args);
 }
 
 int vfscanf(FILE *stream, const char *format, va_list args) {
   CKDEBUG("requesting input");
   ck_request_input(stream);
-  return ifp.vfscanf(stream, format, args);
+  return vfscanf_and_eat_newline(stream, format, args);
 }
 
 #if USE_C11 && USE_BOUNDS_CHECKING
