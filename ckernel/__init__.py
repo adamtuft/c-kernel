@@ -1,7 +1,7 @@
 """ckernel module __init__.py"""
 from __future__ import annotations
 
-__version__ = "0.4.0"
+__version__ = "0.4.1"
 
 from . import async_kernel, autocompile_kernel, base_kernel, resource
 

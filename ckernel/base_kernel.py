@@ -116,7 +116,12 @@ class BaseKernel(IPythonKernel):
                 self.raw_input(prompt=prompt) + "\n"
             )  # add a newline because self.raw_input does not
             self.log_info("got data: %s", data.encode())
-            writer.write(data.encode())
+            if data == "^D\n":
+                self.log_info("EOF received")
+                writer.close()
+                break
+            else:
+                writer.write(data.encode())
 
     def print(self, text: str, dest: Stream = STDOUT, end: str = "\n"):
         """Print to the kernel's stream dest"""
