@@ -9,12 +9,12 @@
 #include <dlfcn.h> // for dlsym
 #include <errno.h>
 #include <fcntl.h> // for O_ constants
-#include <mqueue.h>
 #include <stdarg.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/sem.h>
 #include <sys/stat.h> // struct stat
 
 #define USE_C11 (__STDC_VERSION__ >= 201112L)
@@ -63,7 +63,8 @@
   } while (0)
 
 static bool request_input = false;
-static mqd_t stdin_mq = -1;
+key_t stdin_semkey = -1;
+int stdin_semid = -1;
 
 // pointers to real input functions
 struct input_fp {
@@ -88,63 +89,6 @@ struct input_fp {
 static struct input_fp ifp = {0};
 
 static void ck_request_input(FILE *stream);
-
-static void ck_describe_mq_file(const char *name) {
-  char mq_path[256] = {0};
-  snprintf(&mq_path[0], 255, "/dev/mqueue%s", name);
-  CKDEBUG("attempt to open mqueue %s", mq_path);
-  FILE *mq_file = NULL;
-  if ((mq_file = fopen(mq_path, "rb")) == NULL) {
-    CKDEBUG("[Error %d: %s] failed to open message queue at %s", errno,
-            strerror(errno), mq_path);
-    return;
-  }
-  struct stat mq_stat;
-  fstat(fileno(mq_file), &mq_stat);
-  const char *file_type = NULL;
-  switch (mq_stat.st_mode & S_IFMT) {
-  case S_IFBLK:
-    file_type = "block device";
-    break;
-  case S_IFCHR:
-    file_type = "character device";
-    break;
-  case S_IFDIR:
-    file_type = "directory";
-    break;
-  case S_IFIFO:
-    file_type = "FIFO/pipe";
-    break;
-  case S_IFLNK:
-    file_type = "symlink";
-    break;
-  case S_IFREG:
-    file_type = "regular file"; // i.e. redirected from file
-    break;
-  case S_IFSOCK:
-    file_type = "socket";
-    break;
-  default:
-    file_type = "unknown?";
-    break;
-  }
-  CKDEBUG("%-16s %s", "file type", file_type);
-  CKDEBUG("%-16s %d", "st_dev",
-          mq_stat.st_dev); /* ID of device containing file */
-  CKDEBUG("%-16s %d", "st_ino", mq_stat.st_ino);     /* Inode number */
-  CKDEBUG("%-16s 0%o", "st_mode", mq_stat.st_mode);  /* File type and mode */
-  CKDEBUG("%-16s %d", "st_nlink", mq_stat.st_nlink); /* Number of hard links */
-  CKDEBUG("%-16s %d", "st_uid", mq_stat.st_uid);     /* User ID of owner */
-  CKDEBUG("%-16s %d", "st_gid", mq_stat.st_gid);     /* Group ID of owner */
-  CKDEBUG("%-16s %d", "st_rdev",
-          mq_stat.st_rdev); /* Device ID (if special file) */
-  CKDEBUG("%-16s %d", "st_size", mq_stat.st_size); /* Total size, in bytes */
-  CKDEBUG("%-16s %d", "st_blksize",
-          mq_stat.st_blksize); /* Block size for filesystem I/O */
-  CKDEBUG("%-16s %d", "st_blocks",
-          mq_stat.st_blocks); /* Number of 512 B blocks allocated */
-  return;
-}
 
 static void __attribute__((constructor)) ck_setup(void) {
   struct stat stdin_stat;
@@ -196,7 +140,7 @@ static void __attribute__((constructor)) ck_setup(void) {
           stdin_stat.st_blocks); /* Number of 512 B blocks allocated */
 #endif
 
-  // if stdin is NOT a regular file, use message queue for input request
+  // if stdin is NOT a regular file, use semaphore for input request
   CKDEBUG("%s", S_ISREG(stdin_stat.st_mode) ? "stdin is regular file"
                                             : "stdin is not regular file");
   request_input = (!(S_ISREG(stdin_stat.st_mode))) ? true : false;
@@ -223,23 +167,26 @@ static void __attribute__((constructor)) ck_setup(void) {
   ATTACH_FP(ifp, getdelim);
 #endif
 
-  // get the specified message queue from the environment
-  const char *mq_name = NULL;
-  if ((mq_name = getenv("CK_MQNAME")) == NULL) {
-    CKDEBUG("environment variable %s not set, no message queue specified",
-            "CK_MQNAME");
+  // get the specified semaphore from the environment
+  const char *sem_key = NULL;
+  if ((sem_key = getenv("CK_SEMKEY")) == NULL) {
+    CKDEBUG("environment variable %s not set, no semaphore specified",
+            "CK_SEMKEY");
     request_input = false;
     return;
   }
 
-  // attempt to connect to message queue
-  ck_describe_mq_file(mq_name);
-  CKDEBUG("connect to queue %s", mq_name);
-  if ((stdin_mq = mq_open(mq_name, O_WRONLY)) == -1) {
-    CKDEBUG(
-        "failed to open message queue, not using input wrappers [Error %d: %s]",
-        errno, strerror(errno));
+  // attempt to get semaphore
+  CKDEBUG("get semaphore key %s", sem_key);
+  key_t _key = -1;
+  sscanf(sem_key, "%d", &_key);
+  if ((stdin_semid = semget(_key, 1, 0)) == -1) {
+    CKDEBUG("failed to get semaphore with key=%s, not using input wrappers "
+            "[Error %d: %s]",
+            sem_key, errno, strerror(errno));
     request_input = false;
+  } else {
+    CKDEBUG("got semaphore with key=%s, id=%d\n", sem_key, stdin_semid);
   }
   return;
 }
@@ -247,9 +194,13 @@ static void __attribute__((constructor)) ck_setup(void) {
 static void ck_request_input(FILE *stream) {
   if (!(request_input && (stream == stdin)))
     return;
-  static const char *msg = "READY";
   CKDEBUG("signal waiting for input");
-  mq_send(stdin_mq, msg, strlen(msg), 0);
+  struct sembuf op = {.sem_num = 0, .sem_op = +1, .sem_flg = 0};
+  if (semop(stdin_semid, &op, 1) == -1) {
+    CKDEBUG("failed to increment semaphore id=%d "
+            "[Error %d: %s]",
+            stdin_semid, errno, strerror(errno));
+  }
   CKDEBUG("ready for input");
 }
 

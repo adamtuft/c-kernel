@@ -1,6 +1,7 @@
 """A simple asynchronous kernel"""
 
-from .util import AsyncCommand, STDERR
+from .util import STDERR
+from .async_command import AsyncCommand
 from .base_kernel import BaseKernel
 
 
