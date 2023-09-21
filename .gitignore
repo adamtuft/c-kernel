@@ -6,3 +6,6 @@
 __pycache__
 *.egg-info
 /*.sh
+
+# ignore generated html
+/docs/html
