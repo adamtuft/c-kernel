@@ -7,4 +7,4 @@ if [ -e "{script}" ]; then
     source "{script}"
 fi
 
-python3 -m ckernel run {kernel} -f "${{1}}"
+python3 -m ckernel run -f "${{1}}"

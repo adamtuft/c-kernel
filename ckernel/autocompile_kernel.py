@@ -12,12 +12,12 @@ from contextlib import contextmanager
 from typing import List, Optional
 
 from . import resource
+from .async_command import AsyncCommand
+from .trigger import SysVSemTrigger
 from .base_kernel import BaseKernel
 from .util import (
     STDERR,
-    AsyncCommand,
     Lang,
-    Trigger,
     error,
     error_from_exception,
     get_environment_variables,
@@ -25,6 +25,7 @@ from .util import (
     success,
     switch_directory,
     temporary_directory,
+    is_macOS,
 )
 
 
@@ -59,9 +60,7 @@ class AutoCompileKernel(BaseKernel):
         self._active_commands: set[AsyncCommand] = set()
 
         # create a trigger for stdin
-        self.stdin_trigger = Trigger(
-            logger=self.log, prefix=f"ipython-{self.__class__.__name__}-"
-        )
+        self.stdin_trigger = SysVSemTrigger(logger=self.log)
         self.log_info("using trigger %s", self.stdin_trigger)
 
         # compile input wrappers
@@ -112,7 +111,7 @@ class AutoCompileKernel(BaseKernel):
             self.log_info("remove %s", self.twd)
             shutil.rmtree(self.twd)
         self.log_info("unlink trigger %s", self.stdin_trigger)
-        self.stdin_trigger.stop(unlink=True)
+        self.stdin_trigger.close(unlink=True)
         return super().do_shutdown(restart)
 
     def do_interrupt(self):
@@ -352,15 +351,21 @@ class AutoCompileKernel(BaseKernel):
         depends: str,
         exe: str,
     ) -> AsyncCommand:
-        return AsyncCommand(f"{compiler} {cflags} {name} {ldflags} {depends} -o {exe}")
+        return AsyncCommand(f"{compiler} {cflags} {name} {depends} {ldflags} -o {exe}")
 
     def command_detect_main(self, objfile: str) -> AsyncCommand:
-        return AsyncCommand(f"""nm {objfile} | grep " T main" """)
+        if is_macOS:
+            # it seems that on macOS `int main()` is compiled to the symbol
+            # `_main`
+            cmd = f"""nm {objfile} | grep " T _main" """
+        else:
+            cmd = f"""nm {objfile} | grep " T main" """
+        return AsyncCommand(cmd)
 
     def command_link_exe(
         self, compiler: str, ldflags: str, exe: str, objname: str, depends: str
     ) -> AsyncCommand:
-        return AsyncCommand(f"{compiler} {ldflags} {depends} {objname} -o {exe}")
+        return AsyncCommand(f"{compiler} {depends} {objname} {ldflags} -o {exe}")
 
     @classmethod
     def default_compiler_args(cls, extra: Optional[List[str]] = None) -> Namespace:

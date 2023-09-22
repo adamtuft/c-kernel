@@ -12,7 +12,8 @@ from ipykernel.ipkernel import IPythonKernel
 
 import ckernel
 
-from .util import STDERR, STDOUT, Stream, Trigger
+from .util import STDERR, STDOUT, Stream
+from .trigger import Trigger
 
 
 class BaseKernel(IPythonKernel):
