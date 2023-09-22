@@ -1,0 +1,15 @@
+Sphinx==6.2.1
+sphinx-material==0.0.36
+sphinx-pdj-theme==0.4.0
+sphinx-press-theme==0.8.0
+sphinx-rtd-theme==1.2.2
+sphinx-theme-pd==0.8.3
+sphinxcontrib-applehelp==1.0.7
+sphinxcontrib-devhelp==1.0.5
+sphinxcontrib-htmlhelp==2.0.4
+sphinxcontrib-jquery==4.1
+sphinxcontrib-jsmath==1.0.1
+sphinxcontrib-qthelp==1.0.6
+sphinxcontrib-serializinghtml==1.1.9
+sphinx-copybutton==0.5.2
+pydata-sphinx-theme==0.14.1
