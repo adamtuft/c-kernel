@@ -13,7 +13,7 @@ from ipykernel.ipkernel import IPythonKernel
 import ckernel
 
 from .util import STDERR, STDOUT, Stream
-from .trigger import AbstractTrigger
+from .trigger import Trigger
 
 
 class BaseKernel(IPythonKernel):
@@ -103,7 +103,7 @@ class BaseKernel(IPythonKernel):
         return self.stream_data(STDERR, reader, end="")
 
     def write_input(
-        self, writer: asyncio.StreamWriter, trigger: AbstractTrigger, prompt: str = ""
+        self, writer: asyncio.StreamWriter, trigger: Trigger, prompt: str = ""
     ):
         """Get input and send to writer. Wait for input request from trigger"""
         while True:

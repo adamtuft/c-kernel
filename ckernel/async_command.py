@@ -6,11 +6,22 @@ import os
 from contextlib import contextmanager
 from functools import partial
 from logging import Logger
-from typing import Optional
+from typing import Optional, Coroutine, NoReturn, Protocol
 
-from .protocols import StreamConsumer, StreamWriter
 from .log import log_info
-from .trigger import AbstractTrigger
+from .trigger import Trigger
+
+
+class StreamConsumer(Protocol):
+    def __call__(self, reader: asyncio.StreamReader) -> Coroutine[None, None, None]:
+        ...
+
+
+class StreamWriter(Protocol):
+    def __call__(
+        self, writer: asyncio.StreamWriter, trigger: Trigger, prompt: str = ""
+    ) -> NoReturn:
+        ...
 
 
 class AsyncCommand:
@@ -35,7 +46,7 @@ class AsyncCommand:
         stdout: StreamConsumer,
         stderr: StreamConsumer,
         stdin: StreamWriter,
-        stdin_trigger: AbstractTrigger,
+        stdin_trigger: Trigger,
     ):
         return await self.run(stdout, stderr, stdin, stdin_trigger)
 
@@ -44,7 +55,7 @@ class AsyncCommand:
         stdout: Optional[StreamConsumer],
         stderr: Optional[StreamConsumer],
         stdin: Optional[StreamWriter],
-        stdin_trigger: Optional[AbstractTrigger],
+        stdin_trigger: Optional[Trigger],
         **kwargs,
     ):
         """run the command, streaming output via stdout and stderr arguments.
@@ -92,7 +103,7 @@ class AsyncCommand:
         self,
         stdin: Optional[StreamWriter],
         proc_stdin: asyncio.StreamWriter,
-        stdin_trigger: AbstractTrigger,
+        stdin_trigger: Trigger,
     ):
         if stdin is not None:
             func = partial(stdin, proc_stdin, stdin_trigger, prompt="stdin: ")

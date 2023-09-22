@@ -20,6 +20,7 @@ import jupyter_client
 from ipykernel.kernelapp import IPKernelApp
 
 import ckernel
+from ckernel.autocompile_kernel import AutoCompileKernel
 
 KernelSpec = TypedDict(
     "KernelSpec",
@@ -52,7 +53,6 @@ def tempdir():
 
 def install(
     specdir: pathlib.Path,
-    kernel: str,
     name: str,
     display_name: str,
     user: bool,
@@ -68,8 +68,8 @@ def install(
 
     # The kernel spec to serialise in "kernel.json"
     spec = KernelSpec(
-        argv=shlex.split(f"python3 -m ckernel run {kernel}" + " -f {connection_file}"),
-        display_name=display_name or kernel,
+        argv=shlex.split(f"python3 -m ckernel run" + " -f {connection_file}"),
+        display_name=display_name or "AutoCompileKernel",
         env={
             "CKERNEL_CC": c_compiler,
             "CKERNEL_CXX": cpp_compiler,
@@ -113,14 +113,12 @@ def install(
     return InstallResult(dest=dest, spec=spec)
 
 
-def install_startup_script(
-    kernel: str, name: str, installdir: str, spec: KernelSpec, script: str
-):
+def install_startup_script(name: str, installdir: str, spec: KernelSpec, script: str):
     kernel_start_path = ckernel.resource.get("kernel.sh")
     with open(kernel_start_path, "r", encoding="utf-8") as kernel_start_file:
         kernel_start = "".join(kernel_start_file.readlines())
         kernel_start = kernel_start.format(
-            kernel=kernel, name=name, installdir=installdir, script=script
+            name=name, installdir=installdir, script=script
         )
 
     startup_script_path = os.path.abspath(pathlib.Path(installdir) / "kernel.sh")
@@ -168,12 +166,6 @@ def main(prog: typing.Optional[str] = None) -> None:
     )
 
     # Arguments to the install subcommand
-    parse_install.add_argument(
-        "kernel",
-        help=f"kernel to install ({', '.join(ckernel.class_list())})",
-        choices=ckernel.class_list(),
-        metavar="kernel",
-    )
     parse_install.add_argument(
         "name", help="a name for this kernel (must be unique among installed kernels)"
     )
@@ -235,11 +227,6 @@ def main(prog: typing.Optional[str] = None) -> None:
 
     # Arguments to the run subcommand
     parse_run.add_argument(
-        "kernel",
-        metavar="kernel",
-        help="the class of the kernel to run",
-    )
-    parse_run.add_argument(
         "-f", help="the connection file to use", metavar="connection"
     )
 
@@ -276,7 +263,6 @@ def main(prog: typing.Optional[str] = None) -> None:
         with tempdir() as specdir:
             installed = install(
                 specdir,
-                args.kernel,
                 args.name,
                 args.display_name,
                 args.user,
@@ -287,18 +273,17 @@ def main(prog: typing.Optional[str] = None) -> None:
                 env=env,
             )
             print(
-                f'installed {args.kernel} as {args.name} (display name "{args.display_name}") at {installed["dest"]}'
+                f'installed {args.name} (display name "{args.display_name}") at {installed["dest"]}'
             )
         if args.startup:
             install_startup_script(
-                args.kernel,
                 args.name,
                 installed["dest"],
                 installed["spec"],
                 args.startup,
             )
     elif args.command == Command.RUN:
-        IPKernelApp.launch_instance(kernel_class=ckernel.get_cls(args.kernel))
+        IPKernelApp.launch_instance(kernel_class=AutoCompileKernel)
     elif args.command == Command.SHOW:
         show(args.name)
     else:

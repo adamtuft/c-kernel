@@ -13,7 +13,7 @@ from typing import List, Optional
 
 from . import resource
 from .async_command import AsyncCommand
-from .trigger import SysVSemTrigger as Trigger
+from .trigger import SysVSemTrigger
 from .base_kernel import BaseKernel
 from .util import (
     STDERR,
@@ -60,9 +60,7 @@ class AutoCompileKernel(BaseKernel):
         self._active_commands: set[AsyncCommand] = set()
 
         # create a trigger for stdin
-        self.stdin_trigger = Trigger(
-            logger=self.log, prefix=f"ipython-{self.__class__.__name__}-"
-        )
+        self.stdin_trigger = SysVSemTrigger(logger=self.log)
         self.log_info("using trigger %s", self.stdin_trigger)
 
         # compile input wrappers

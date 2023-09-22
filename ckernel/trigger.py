@@ -12,13 +12,12 @@ import sysv_ipc
 from .log import log_info
 
 
-class AbstractTrigger(ABC):
+class Trigger(ABC):
     """Block until a process signals that it is ready"""
 
     @abstractmethod
     def __init__(
         self,
-        prefix: str = "",
         timeout: Optional[int] = None,
         logger: Optional[Logger] = None,
     ):
@@ -52,12 +51,11 @@ class AbstractTrigger(ABC):
         """Make the trigger ready for waiting and call self.close() when done"""
 
 
-class SysVSemTrigger(AbstractTrigger):
+class SysVSemTrigger(Trigger):
     """Block on a SystemV semaphore until a process signals that it is ready"""
 
     def __init__(
         self,
-        prefix: str = "",
         timeout: Optional[int] = None,
         logger: Optional[Logger] = None,
     ) -> None:
