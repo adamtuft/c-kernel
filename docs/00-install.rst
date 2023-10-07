@@ -1,6 +1,12 @@
 Installing c-kernel
 ===================
 
+.. attention::
+    C-kernel is officially supported on Linux and macOS, and on Windows using the Windows
+    Subsystem for Linux (WSL). C-kernel *may* work on Windows without WSL (in which
+    case you will need to install Microsoft Visual C++ 14.0 or greater), however this
+    isn't officially supported.
+
 .. contents: Contents
 
 For the latest published version of c-kernel, install via pip:
