@@ -26,6 +26,7 @@ class EnvironmentVariables(NamedTuple):
     CKERNEL_EXE_CFLAGS: Optional[str]
     CKERNEL_EXE_CXXFLAGS: Optional[str]
     CKERNEL_EXE_LDFLAGS: Optional[str]
+    CKERNEL_EAT_NEWLINE: Optional[str]
 
 
 def get_environment_variables(default: Optional[str] = None) -> EnvironmentVariables:

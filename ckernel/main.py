@@ -60,6 +60,7 @@ def install(
     c_compiler: str,
     cpp_compiler: str,
     debug: bool,
+    eat_newline: bool,
     env: Optional[Dict[str, str]] = None,
 ) -> InstallResult:
     """Install a specific kernel"""
@@ -78,6 +79,9 @@ def install(
     )
     if debug:
         spec["env"]["CKERNEL_DEBUG"] = "TRUE"
+
+    if eat_newline:
+        spec["env"]["CKERNEL_EAT_NEWLINE"] = "TRUE"
 
     if env:
         spec["env"].update(env)
@@ -216,6 +220,12 @@ def main(prog: typing.Optional[str] = None) -> None:
         metavar="script",
         help="a startup script to be sourced before launching the kernel",
     )
+    parse_install.add_argument(
+        "--eat-newline",
+        dest="eat_newline",
+        action="store_true",
+        help="after input is obtained, consume unused data in stdin until the next newline or EOF",
+    )
 
     # Parse the run subcommand
     parse_run = command_action.add_parser(
@@ -270,6 +280,7 @@ def main(prog: typing.Optional[str] = None) -> None:
                 args.cc,
                 args.cxx,
                 args.debug,
+                args.eat_newline,
                 env=env,
             )
             print(

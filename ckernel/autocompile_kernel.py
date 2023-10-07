@@ -67,8 +67,11 @@ class AutoCompileKernel(BaseKernel):
         dirname, ck_dyn_src = os.path.split(resource.input_wrappers_src)
         self.ck_dyn_obj = self.twd / "ckernel-input-wrappers.o"
         debug_flag = "-DCKERNEL_WITH_DEBUG" if self.debug else ""
+        eat_newline_flag = (
+            "-DCKERNEL_EAT_NEWLINE" if self.env.CKERNEL_EAT_NEWLINE else ""
+        )
         compile_cmd = AsyncCommand(
-            f"{self.env.CKERNEL_CC} {debug_flag} -c {ck_dyn_src} -o {self.ck_dyn_obj}",
+            f"{self.env.CKERNEL_CC} {debug_flag} {eat_newline_flag} -c {ck_dyn_src} -o {self.ck_dyn_obj}",
             logger=self.log,
         )
         self.log_info("%s", compile_cmd)

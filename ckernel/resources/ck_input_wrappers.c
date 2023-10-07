@@ -247,9 +247,24 @@ int getchar(void) {
 /**
  * @brief A wrapper around ifp.vfscanf which gets input and then, if stream is
  * stdin, eats input until the next '\n' or EOF.
+ *
+ * Problem: When an input function is called, we always signal the kernel for
+ * input first. After we get input according to the format arg, we consume
+ * anything left in stdin until '\n' or EOF. This is incorrect if the user
+ * entered data to be consumed over multiple calls to `scanf`. Thus we sometimes
+ * don't want to consume input left in stdin as the user might want to read it
+ * over multiple calls. Ideally, would only request input in the kernel if stdin
+ * is empty.
+ *
+ * Workaround:
+ * - make this behaviour opt-in so that the default is to leave unconsumed data
+ *   in stdin.
+ * - for now, continue to signal for input each time an input function is called
+ *   and investigate whether we can reliably detect unconsumed data in stdin.
  */
 int vfscanf_and_eat_newline(FILE *stream, const char *format, va_list args) {
-  int result = ifp.vfscanf(stdin, format, args);
+  int result = ifp.vfscanf(stream, format, args);
+#if defined(CKERNEL_EAT_NEWLINE)
   if (stream == stdin) {
     CKDEBUG("consuming stdin until newline removed or EOF");
     int c = EOF;
@@ -258,6 +273,7 @@ int vfscanf_and_eat_newline(FILE *stream, const char *format, va_list args) {
     } while ((c != '\n') && (c != EOF));
     CKDEBUG("finished consuming stdin");
   }
+#endif // CKERNEL_EAT_NEWLINE
   return result;
 }
 
