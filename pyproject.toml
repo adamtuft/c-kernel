@@ -5,12 +5,12 @@ build-backend = "setuptools.build_meta"
 [project]
 requires-python = ">=3.8"
 name = "ckernel"
-description = "IPython kernels for teaching and learning C/C++ in a Jupyter notebook, providing C/C++ syntax highlighting and a little more magic."
+description = "Provides a Jupyter kernel which allows automatic compilation and execution of C/C++ code from a notebook environment."
 readme = "README.md"
-version = "0.5"
+version = "0.5.1"
 authors = [{ name = "Adam Tuft" }]
 dependencies = ["sysv_ipc", "ipykernel", "jupyter_client", "colorama", "notebook"]
-license = { file = "LICENSE" }
+license = { text = "BSD-3-Clause" }
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Programming Language :: C",
@@ -23,7 +23,7 @@ classifiers = [
 keywords = ["jupyter", "notebook", "kernel", "c", "c++"]
 
 [project.urls]
-"Homepage" = "https://github.com/adamtuft/c-kernel"
+"Homepage" = "https://c-kernel.readthedocs.io/en/latest/index.html"
 "Bug Tracker" = "https://github.com/adamtuft/c-kernel/issues"
 
 [project.scripts]

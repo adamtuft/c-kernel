@@ -23,6 +23,8 @@ Alternatively, you can get the latest commits to c-kernel from Github:
     git clone -b dev https://github.com/adamtuft/c-kernel.git
     pip install ./c-kernel
 
+Kernel installation
+^^^^^^^^^^^^^^^^^^^
 
 To install the Jupyter kernel provided by c-kernel:
 
@@ -31,20 +33,12 @@ To install the Jupyter kernel provided by c-kernel:
     python3 -m ckernel install ckernel "C/C++"
 
 To use this kernel, select the kernel called "C/C++" when creating a new notebook.
-
-Installation options
-^^^^^^^^^^^^^^^^^^^^
-
-When you install a kernel, you are installing a set of instructions which Jupyter
-uses to launch the kernel (also known as a kernel specification). The specification
-can be customised with options to the ``install`` command. See ``python3 -m ckernel install --help``
-for a full listing of the options. Multiple specifications, each with a different
-sets of options, can be installed by giving each a unique name and display name.
-
-You can see a list of the installed kernel specifications with ``jupyter kernelspec list``.
+Additional kernel specifications can be installed by giving each a unique name and
+display name. You can see a list of the installed kernel specifications with
+``jupyter kernelspec list``.
 
 .. attention::
-    c-kernel requires a C/C++ compiler. By default it uses ``gcc`` and ``g++``,
+    The kernel requires a C/C++ compiler. By default it uses ``gcc`` and ``g++``,
     but you can change this with the ``--cc`` and ``--cxx`` options.
 
 Positional arguments
