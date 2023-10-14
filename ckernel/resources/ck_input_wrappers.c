@@ -6,6 +6,8 @@
  */
 #define _GNU_SOURCE
 
+#define _POSIX_C_SOURCE 1 // for fdopen
+
 #include <dlfcn.h> // for dlsym
 #include <errno.h>
 #include <fcntl.h> // for O_ constants
@@ -16,6 +18,7 @@
 #include <string.h>
 #include <sys/sem.h>
 #include <sys/stat.h> // struct stat
+#include <unistd.h>   // for STDIN_FILENO
 
 #define USE_C11 (__STDC_VERSION__ >= 201112L)
 #define USE_BOUNDS_CHECKING                                                    \
@@ -63,8 +66,7 @@
   } while (0)
 
 static bool request_input = false;
-key_t stdin_semkey = -1;
-int stdin_semid = -1;
+static int stdin_semid = -1;
 
 // pointers to real input functions
 struct input_fp {
@@ -191,17 +193,32 @@ static void __attribute__((constructor)) ck_setup(void) {
   return;
 }
 
+/**
+ * @brief Signal the kernel for input on stream, if:
+ *  - request_input is true, and
+ *  - stream is stdin, and
+ *  - the stream is not a regular file
+ *
+ */
 static void ck_request_input(FILE *stream) {
-  if (!(request_input && (stream == stdin)))
+  struct stat s;
+  if (fstat(fileno(stream), &s) == -1) {
+    CKERROR("failed to stat file", errno, strerror(errno));
     return;
-  CKDEBUG("signal waiting for input");
-  struct sembuf op = {.sem_num = 0, .sem_op = +1, .sem_flg = 0};
-  if (semop(stdin_semid, &op, 1) == -1) {
-    CKDEBUG("failed to increment semaphore id=%d "
-            "[Error %d: %s]",
-            stdin_semid, errno, strerror(errno));
   }
-  CKDEBUG("ready for input");
+  if (request_input && (fileno(stream) == STDIN_FILENO) &&
+      (!S_ISREG(s.st_mode))) {
+    CKDEBUG("signal waiting for input");
+    struct sembuf op = {.sem_num = 0, .sem_op = +1, .sem_flg = 0};
+    if (semop(stdin_semid, &op, 1) == -1) {
+      CKDEBUG("failed to increment semaphore id=%d "
+              "[Error %d: %s]",
+              stdin_semid, errno, strerror(errno));
+    }
+    CKDEBUG("ready for input");
+  } else {
+    CKDEBUG("do not signal for input");
+  }
 }
 
 int getc(FILE *stream) {
