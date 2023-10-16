@@ -193,18 +193,22 @@ static void __attribute__((constructor)) ck_setup(void) {
 /**
  * @brief Signal the kernel for input on stream, if:
  *  - request_input is true, and
- *  - stream is stdin, and
+ *  - stream is stdin OR appears to point to the same file as stdin, and
  *  - the stream is not a regular file
  *
  */
 static void ck_request_input(FILE *stream) {
-  struct stat s;
-  if (fstat(fileno(stream), &s) == -1) {
+  struct stat stream_stat, stdin_stat;
+  if ((fstat(fileno(stream), &stream_stat) == -1) ||
+      (fstat(STDIN_FILENO, &stdin_stat) == -1)) {
     CKERROR("failed to stat file", errno, strerror(errno));
     return;
   }
-  if (request_input && (fileno(stream) == STDIN_FILENO) &&
-      (!S_ISREG(s.st_mode))) {
+  if (request_input &&
+      ((fileno(stream) == STDIN_FILENO) ||
+       ((stream_stat.st_dev == stdin_stat.st_dev) &&
+        (stream_stat.st_ino == stdin_stat.st_ino))) &&
+      (!S_ISREG(stream_stat.st_mode))) {
     CKDEBUG("signal waiting for input");
     struct sembuf op = {.sem_num = 0, .sem_op = +1, .sem_flg = 0};
     if (semop(stdin_semid, &op, 1) == -1) {
