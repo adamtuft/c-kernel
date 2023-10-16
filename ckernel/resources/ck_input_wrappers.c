@@ -5,9 +5,6 @@
  *
  */
 #define _GNU_SOURCE
-
-#define _POSIX_C_SOURCE 1 // for fdopen
-
 #include <dlfcn.h> // for dlsym
 #include <errno.h>
 #include <fcntl.h> // for O_ constants
