@@ -88,11 +88,28 @@ class AutoCompileKernel(BaseKernel):
     def __repr__(self):
         return f"{self.__class__.__name__}"
 
-    async def do_execute(self, *args, **kwargs):
+    async def do_execute(
+        self,
+        code: str,
+        silent,
+        store_history=True,
+        user_expressions=None,
+        allow_stdin=False,
+        *,
+        cell_meta=None,
+        cell_id=None,
+    ):
         """Catch all exceptions and report them in the notebook"""
         result = None
         try:
-            result = await self.autocompile(*args, **kwargs)
+            result = await self.autocompile(
+                code,
+                silent,
+                store_history=store_history,
+                user_expressions=user_expressions,
+                allow_stdin=allow_stdin,
+                cell_id=cell_id,
+            )
         except Exception:  # pylint: disable=broad-exception-caught
             message, result = error_from_exception(*sys.exc_info())
             self.print(message, dest=STDERR)
