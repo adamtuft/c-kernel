@@ -232,7 +232,6 @@ class AutoCompileKernel(BaseKernel):
             # main not defined, so repeat to asynchronously report compilation
             # to .o and stop
             self.debug_msg("main not defined: compile to .o and stop")
-            self.log_info(f"$> {compile_cmd}")
             compile_cmd = self.command_compile(
                 args.compiler,
                 args.cflags,
@@ -240,6 +239,7 @@ class AutoCompileKernel(BaseKernel):
                 args.filename,
                 args.obj,
             )
+            self.log_info(f"$> {compile_cmd}")
             await compile_cmd.run_with_output(self.stream_stdout, self.stream_stderr)
             return success(self.execution_count)
 
@@ -381,8 +381,6 @@ class AutoCompileKernel(BaseKernel):
         return AsyncCommand(f"{compiler} {cflags} {name} {depends} {ldflags} -o {exe}")
 
     async def command_detect_main(self, compiler: str, srcfile: str):
-        import re
-
         # run the preprocessor instead of the entire compiler       
         def preprocessorCMD(compiler: str, srcfile: str) -> AsyncCommand:
             return AsyncCommand(f"{compiler} -E --no-line-commands {srcfile}")
@@ -392,74 +390,20 @@ class AutoCompileKernel(BaseKernel):
         result, stdout_lines, errMsg = await cmd.run_silent()
         if result != 0:
             return error("Preprocessor Failed", errMsg)
-
-        """Doing the following steps might be slower then a searching through the simple assembly file for the main/start tag"""
-        stdout_lines = " ".join(stdout_lines)
-        stdout_lines = re.sub('\s+', "", stdout_lines)
-        # remove all strings as they can be interpreted as valid code even tho they shouldn't
-        #   (if you want to inject code via string you're on your own lol)
-        stdout_lines = re.sub('\"[^\"]*\"', '\"\"', stdout_lines)
-        stdout_lines = re.sub("\'[^\']*\'", "\'\'", stdout_lines)
-
-        def matchBrackets(in_str: str, opener: str, closer: str):
-            listA = [(idx, +1) for idx, elem in enumerate(in_str) if elem == opener]
-            listB = [(idx, -1) for idx, elem in enumerate(in_str) if elem == closer]
-
-            if len(listA) != len(listB):
-                return error("Bracket Matching", "Unequal Amount of Closing and Opening Brackets")
-
-            combined = sorted(listA + listB)
-            
-            retList = []
-
-            depth = 0
-            tpl = [None,None]
-            for bracket in combined:
-                depth += bracket[1]
-
-                # closed bracked despite not being opened previously
-                # its technically possible to have a string that contains a single bracket that would 
-                # trigger this!
-                # suggested fix: ignore opened bracket, without closed bracket 
-                if depth < 0:
-                    return error("Bracket Matching", "Could not Match brackets. Encountered Closing Bracket before Opening!")
-
-                # root bracket opened
-                if depth == 1 and bracket[1] == +1:
-                    tpl[0] = bracket[0]
-
-                # root bracked closed
-                if depth == 0:
-                    tpl[1] = bracket[0]
-                    retList.append(tpl)
-                    tpl = [None,None]
-
-            return retList
         
-        def removeBracketContent(in_str: str, removeIndecies, replacement: str):
-            for idxpair in reversed(removeIndecies):
-                in_str = in_str[:idxpair[0]] + replacement + in_str[idxpair[1]+1:]
+        stdout_lines = " ".join(stdout_lines)
 
-            return in_str
+        import re
 
-        # remove the content between curly brackets , but keep them, 
-        # this is useful for detecting whether the main function is defined properly
-        rmvCurly = matchBrackets(stdout_lines, '{', '}')
-        stdout_lines = removeBracketContent(stdout_lines, rmvCurly, "{}")
+        parameters = "[^\)]*"  # encapsulate parameters
+        declared = "[^;\{]*\{" # ensure that no semicolon comes before the curly bracket
+        main_regex = f"main\s*\({parameters}\)\s*{declared}" # look for main(...){ 
+        
+        res = re.split(main_regex, stdout_lines) # seperate the function at main(){
 
-        # remove the content between round brackets , but keep them, 
-        # this is useful for detecting whether the main function is defined properly
-        rmvRound = matchBrackets(stdout_lines, '(', ')')
-        stdout_lines = removeBracketContent(stdout_lines, rmvRound, "()")
+        openquotes = sum(part.count('"') for part in res[::-1]) % 2
 
-        # remove everything enclosed in sqaure Brackets, including the Brackets themselves
-        rmvSquare = matchBrackets(stdout_lines, '[', ']')
-        stdout_lines = removeBracketContent(stdout_lines, rmvSquare, "")
-
-        matchedMain = re.search("(int|void|)main\(\)\{\}", stdout_lines)
-
-        # search for main definitions
-        return matchedMain != None
+        return openquotes == 0 and len(res) > 1
 
     def command_link_exe(
         self, compiler: str, ldflags: str, exe: str, objname: str, depends: str
