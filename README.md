@@ -5,6 +5,12 @@
 <a href="https://pypi.org/project/ckernel/"><img src="https://badgen.net/pypi/v/ckernel"></a>
 </p>
 
+<p align="center">
+<strong>Try it out on Binder!</strong>
+</p><p align="center">
+<a href="https://mybinder.org/v2/gh/adamtuft/ckernel-binder-demo/main?urlpath=%2Fdoc%2Ftree%2FIntroduction.ipynb"><img src="https://mybinder.org/badge_logo.svg"></a>
+</p>
+
 This package provides a Jupyter kernel which allows automatic compilation and
 execution of C/C++ code from a notebook environment.
 
