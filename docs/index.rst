@@ -13,6 +13,11 @@ c-kernel |version|
 This package provides a Jupyter kernel which allows automatic compilation and
 execution of C/C++ code from a notebook environment.
 
+Try c-kernel for yourself on binder:
+
+.. image:: https://mybinder.org/badge_logo.svg
+ :target: https://mybinder.org/v2/gh/adamtuft/ckernel-binder-demo/main?urlpath=%2Fdoc%2Ftree%2FIntroduction.ipynb
+
 .. note::
 
     This documentation is currently under construction.
