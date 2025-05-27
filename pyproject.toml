@@ -7,7 +7,7 @@ requires-python = ">=3.8"
 name = "ckernel"
 description = "Provides a Jupyter kernel which allows automatic compilation and execution of C/C++ code from a notebook environment."
 readme = "README.md"
-version = "0.5.2"
+version = "0.5.3"
 authors = [{ name = "Adam Tuft" }]
 dependencies = ["sysv_ipc", "ipykernel", "jupyter_client", "colorama", "notebook"]
 license = { text = "BSD-3-Clause" }
