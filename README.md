@@ -2,6 +2,7 @@
 
 <p align="center">
 <a href="https://c-kernel.readthedocs.io/en/latest/index.html"><img src="https://readthedocs.org/projects/c-kernel/badge/"></a>
+<a href="[https://c-kernel.readthedocs.io/en/latest/index.html](https://github.com/adamtuft/c-kernel/actions/workflows/run_matrix.yml/badge.svg?branch=dev&event=push)"><img src="https://github.com/adamtuft/c-kernel/actions/workflows/run_matrix.yml/badge.svg?branch=dev&event=push"></a>
 <a href="https://pypi.org/project/ckernel/"><img src="https://badgen.net/pypi/v/ckernel"></a>
 </p>
 
