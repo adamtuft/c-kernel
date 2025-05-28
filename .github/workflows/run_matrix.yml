@@ -1,0 +1,17 @@
+name: Run tests with various Python versions
+
+on:
+  push:
+    branches:
+      - dev
+  schedule:
+    - cron: '0 0 1 * *'  # At 00:00 on day-of-month 1
+
+jobs:
+  call-reusable-python-ci:
+    strategy:
+      matrix:
+        python-version: ['3.8', '3.9', '3.10', '3.11', '3.12', '3.13']
+    uses: ./.github/workflows/run_tests.yml
+    with:
+      python-version: ${{ matrix.python-version }}
