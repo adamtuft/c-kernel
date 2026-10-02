@@ -186,46 +186,52 @@ class AutoCompileKernel(BaseKernel):
         # Get args specified in the code cell
         args = self.parse_args(code)
 
+        #Setup Folders
+        args.exe = "build/" + args.exe
+        args.filename = "build/src/" + args.filename
+
+        if len(args.depends) > 0:
+            args.depends = args.depends.split()
+            for idx, dep in enumerate(args.depends):
+                if os.path.isfile(dep):
+                    continue
+                
+                dep = str(self.twd) + "/obj/" + dep
+                if os.path.isfile(dep):
+                    args.depends[idx] = dep
+                    continue
+                
+                message = f'[ERROR] Could not satisfy Dependency! "{args.depends[idx]}" does not exist.'
+                self.print(message, dest=STDERR)
+                return error("MissingDependencies", message)
+            
+            args.depends = " ".join(args.depends)
+
+        args.obj = str(self.twd) + "/obj/" + args.obj
+        
+        os.makedirs(os.path.dirname(args.exe), exist_ok=True)
+        os.makedirs(os.path.dirname(args.filename), exist_ok=True)
+        os.makedirs(os.path.dirname(args.obj), exist_ok=True)
+        
         if args.verbose or self.debug:
             nonempty_args = {k: v for k, v in args.__dict__.items() if v != ""}
             self.print(json.dumps(nonempty_args, indent=2), STDERR)
 
         with open(args.filename, "w", encoding="utf-8") as src:
             src.write(code)
-            self.print(f"wrote file {args.filename}")
+            self.log_info(f"wrote file {args.filename}")
 
         if args.compiler is None or not args.should_compile:
             # No compiler means nothing to compile, so exit
             return success(self.execution_count)
 
-        # Attempt to compile to .o. Do this silently at first, because if
-        # successful we want to detect whether main was defined before
-        # reporting the actual compilation command to the user
-        compile_cmd = self.command_compile(
-            args.compiler, args.cflags, args.LDFLAGS, args.filename, args.obj
-        )
-        self.debug_msg("attempt to compile to .o")
-        self.log_info("attempt to compile to .o")
-        result, _, stderr = await compile_cmd.run_silent()
-
-        if result != 0:
-            # failed to compile to .o, so report error
-            self.debug_msg("failed!")
-            self.log_info("failed!")
-            for line in stderr:
-                self.log_info(line.rstrip())
-                self.print(line, dest=STDERR, end="")
-            return error("CompileFailed", "Compilation failed")
-
         # compiled ok, continue to detect main
         self.debug_msg("detect whether main defined")
-
-        result, *_ = await self.command_detect_main(args.obj).run_silent()
-        if result != 0:
+        result = await self.command_detect_main(args.compiler, args.filename)
+        if not result:
             # main not defined, so repeat to asynchronously report compilation
             # to .o and stop
             self.debug_msg("main not defined: compile to .o and stop")
-            self.print(f"$> {compile_cmd}")
             compile_cmd = self.command_compile(
                 args.compiler,
                 args.cflags,
@@ -233,6 +239,7 @@ class AutoCompileKernel(BaseKernel):
                 args.filename,
                 args.obj,
             )
+            self.log_info(f"$> {compile_cmd}")
             await compile_cmd.run_with_output(self.stream_stdout, self.stream_stderr)
             return success(self.execution_count)
 
@@ -255,7 +262,7 @@ class AutoCompileKernel(BaseKernel):
             args.depends,
             args.exe,
         )
-        self.print(f"$> {compile_exe_cmd}")
+        self.log_info(f"$> {compile_exe_cmd}")
 
         # now add self.ck_dyn_obj to args.depends to add input wrappers
         compile_exe_cmd = self.command_compile_exe(
@@ -276,7 +283,7 @@ class AutoCompileKernel(BaseKernel):
         if not args.should_exec:
             return success(self.execution_count)
         run_exe = AsyncCommand(f"./{args.exe} {args.ARGS}", logger=self.log)
-        self.print(f"$> {run_exe}")
+        self.log_info(f"$> {run_exe}")
         with self.active_command(
             run_exe
         ) as command, self.stdin_trigger.ready() as trigger:
@@ -373,14 +380,30 @@ class AutoCompileKernel(BaseKernel):
     ) -> AsyncCommand:
         return AsyncCommand(f"{compiler} {cflags} {name} {depends} {ldflags} -o {exe}")
 
-    def command_detect_main(self, objfile: str) -> AsyncCommand:
-        if is_macOS:
-            # it seems that on macOS `int main()` is compiled to the symbol
-            # `_main`
-            cmd = f"""nm {objfile} | grep " T _main" """
-        else:
-            cmd = f"""nm {objfile} | grep " T main" """
-        return AsyncCommand(cmd)
+    async def command_detect_main(self, compiler: str, srcfile: str):
+        # run the preprocessor instead of the entire compiler       
+        def preprocessorCMD(compiler: str, srcfile: str) -> AsyncCommand:
+            return AsyncCommand(f"{compiler} -E --no-line-commands {srcfile}")
+        
+        cmd = preprocessorCMD(compiler, srcfile)
+
+        result, stdout_lines, errMsg = await cmd.run_silent()
+        if result != 0:
+            return error("Preprocessor Failed", errMsg)
+        
+        stdout_lines = " ".join(stdout_lines)
+
+        import re
+
+        parameters = "[^\)]*"  # encapsulate parameters
+        declared = "[^;\{]*\{" # ensure that no semicolon comes before the curly bracket
+        main_regex = f"main\s*\({parameters}\)\s*{declared}" # look for main(...){ 
+        
+        res = re.split(main_regex, stdout_lines) # seperate the function at main(){
+
+        openquotes = sum(part.count('"') for part in res[::-1]) % 2
+
+        return openquotes == 0 and len(res) > 1
 
     def command_link_exe(
         self, compiler: str, ldflags: str, exe: str, objname: str, depends: str
